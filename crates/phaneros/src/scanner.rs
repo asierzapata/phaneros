@@ -205,12 +205,14 @@ impl Scanner {
                 })
                 .collect::<Result<Vec<(TreeNode, Vec<(String, MetadataKey, TreeNode)>)>, ScannerError>>()?;
 
-            let (entries_tree_nodes, keys): (
+            let (mut entries_tree_nodes, keys): (
                 Vec<TreeNode>,
                 Vec<Vec<(String, MetadataKey, TreeNode)>>,
             ) = scan_path_results.into_iter().par_bridge().unzip();
             let vector_of_metadata_keys: Vec<(String, MetadataKey, TreeNode)> =
                 keys.into_iter().flatten().par_bridge().collect();
+
+            entries_tree_nodes.sort_by(|a, b| a.name.cmp(&b.name));
 
             let tree_node = TreeNode {
                 name: path.to_string(),
