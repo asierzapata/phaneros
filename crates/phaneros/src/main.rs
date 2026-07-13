@@ -1,7 +1,7 @@
 use phaneros::scanner::Scanner;
 
 fn main() {
-    let mut scanner = Scanner::new(String::from("/Users/asierzapata/.dotfiles"));
+    let mut scanner = Scanner::new(String::from("/Users/asierzapata/Documents/"));
 
     let scanner_events = scanner.events();
 

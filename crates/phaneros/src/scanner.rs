@@ -1,5 +1,5 @@
 use rayon::prelude::*;
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, sync::atomic::AtomicUsize};
 use thiserror::Error;
 
 use crate::utils::observer::Publisher;
@@ -88,6 +88,8 @@ pub struct Scanner {
     status: ScannerStatus, // The current status of the scanner
     tree: Tree,            // The tree representing the contents of the file or directory
     publisher: Publisher<ScannerEvent>, // The publisher for scanner events
+    file_count_estimate: usize, // An estimate of the number of files and directories in the path, used for progress reporting
+    scan_progress: AtomicUsize, // The number of files and directories scanned so far, used for progress reporting
     last_scan_file_metadata_hash_map: HashMap<String, (MetadataKey, TreeNode)>, // A map of file paths to their metadata keys and tree nodes from the last scan
     last_scan_time: Option<std::time::SystemTime>, // The time of the last scan
     last_scan_duration: Option<std::time::Duration>, // The duration of the last scan
@@ -103,6 +105,8 @@ impl Scanner {
                 nodes: Vec::new(),
             },
             publisher: Publisher::default(),
+            file_count_estimate: 0,
+            scan_progress: AtomicUsize::new(0),
             last_scan_file_metadata_hash_map: HashMap::new(),
             last_scan_time: None,
             last_scan_duration: None,
@@ -121,6 +125,24 @@ impl Scanner {
         }
         self.status = ScannerStatus::Scanning;
         self.last_scan_time = Some(std::time::SystemTime::now());
+
+        self.file_count_estimate = if self.last_scan_file_metadata_hash_map.is_empty() {
+            match self.count_files_in_path(&self.file_path) {
+                Ok(count) => count,
+                Err(e) => {
+                    println!("Error counting files in path {}: {}", self.file_path, e);
+                    self.publisher.notify(
+                        &ScannerEvent::Error(format!("Error counting files in path: {}", e)),
+                        &self.file_path,
+                    );
+                    self.status =
+                        ScannerStatus::Error(format!("Error counting files in path: {}", e));
+                    return;
+                }
+            }
+        } else {
+            self.last_scan_file_metadata_hash_map.len()
+        };
 
         self.publisher
             .notify(&ScannerEvent::ScanStarted, &self.file_path);
@@ -238,17 +260,17 @@ impl Scanner {
 
             let last_scan_entry = self.last_scan_file_metadata_hash_map.get(path);
 
-            match last_scan_entry {
+            let scan_response = match last_scan_entry {
                 Some((last_metadata_key, metadata_key_tree_node)) => {
                     if *last_metadata_key == metadata_key {
-                        return Ok((
+                        (
                             metadata_key_tree_node.clone(),
                             vec![(
                                 path.to_string(),
                                 metadata_key.clone(),
                                 metadata_key_tree_node.clone(),
                             )],
-                        ));
+                        )
                     } else {
                         let tree_node = TreeNode {
                             name: path.to_string(),
@@ -256,10 +278,10 @@ impl Scanner {
                             children: Vec::new(),
                         };
 
-                        return Ok((
+                        (
                             tree_node.clone(),
                             vec![(path.to_string(), metadata_key.clone(), tree_node)],
-                        ));
+                        )
                     }
                 }
                 None => {
@@ -269,12 +291,75 @@ impl Scanner {
                         children: Vec::new(),
                     };
 
-                    return Ok((
+                    (
                         tree_node.clone(),
                         vec![(path.to_string(), metadata_key.clone(), tree_node)],
-                    ));
+                    )
                 }
+            };
+
+            self.notify_progress(path);
+
+            return Ok(scan_response);
+        } else {
+            return Err(ScannerError::GetMetadataFailed {
+                path: path.to_string(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Path is neither a file nor a directory",
+                ),
+            });
+        }
+    }
+
+    fn notify_progress(&self, _path: &str) {
+        let progress = self
+            .scan_progress
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        let total = self.file_count_estimate;
+
+        println!("Scanned {} of {} files and directories. ", progress, total,);
+    }
+
+    fn count_files_in_path(&self, path: &str) -> Result<usize, ScannerError> {
+        let metadata = match fs::metadata(path) {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                return Err(ScannerError::GetMetadataFailed {
+                    path: path.to_string(),
+                    source: e,
+                });
             }
+        };
+
+        if metadata.is_dir() {
+            let entries = match fs::read_dir(path) {
+                Ok(entries) => entries,
+                Err(e) => {
+                    return Err(ScannerError::ReadDirFailed {
+                        path: path.to_string(),
+                        source: e,
+                    });
+                }
+            };
+
+            let count = entries
+                .par_bridge()
+                .filter(|entry| entry.is_ok())
+                .map(|entry| {
+                    let entry = entry.unwrap();
+                    let entry_path = entry.path();
+                    let entry_path_str = entry_path.to_string_lossy().to_string();
+                    self.count_files_in_path(&entry_path_str)
+                })
+                .collect::<Result<Vec<usize>, ScannerError>>()?
+                .into_iter()
+                .sum();
+
+            return Ok(count);
+        } else if metadata.is_file() {
+            return Ok(1);
         } else {
             return Err(ScannerError::GetMetadataFailed {
                 path: path.to_string(),
