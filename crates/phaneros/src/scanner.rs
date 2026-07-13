@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use std::{collections::HashMap, fs};
 use thiserror::Error;
 
@@ -67,7 +68,7 @@ pub enum ScannerError {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct MetadataKey(String);
 
 impl MetadataKey {
@@ -87,7 +88,7 @@ pub struct Scanner {
     status: ScannerStatus, // The current status of the scanner
     tree: Tree,            // The tree representing the contents of the file or directory
     publisher: Publisher<ScannerEvent>, // The publisher for scanner events
-    last_scan_path_metadata_hash_map: HashMap<String, (MetadataKey, TreeNode)>, // A map of the last scan's path metadata keys and their corresponding tree nodes
+    last_scan_file_metadata_hash_map: HashMap<String, (MetadataKey, TreeNode)>, // A map of file paths to their metadata keys and tree nodes from the last scan
     last_scan_time: Option<std::time::SystemTime>, // The time of the last scan
     last_scan_duration: Option<std::time::Duration>, // The duration of the last scan
 }
@@ -102,7 +103,7 @@ impl Scanner {
                 nodes: Vec::new(),
             },
             publisher: Publisher::default(),
-            last_scan_path_metadata_hash_map: HashMap::new(),
+            last_scan_file_metadata_hash_map: HashMap::new(),
             last_scan_time: None,
             last_scan_duration: None,
         }
@@ -127,9 +128,17 @@ impl Scanner {
         let file_path = self.file_path.clone();
 
         match self.scan_path(&file_path) {
-            Ok(tree_node) => {
-                self.tree.root_hash = tree_node.hash.clone();
-                self.tree.nodes = vec![tree_node];
+            Ok((tree_node, metadata_keys)) => {
+                self.tree = Tree {
+                    root_hash: tree_node.hash.clone(),
+                    nodes: vec![tree_node],
+                };
+
+                self.last_scan_file_metadata_hash_map.clear();
+                for (path, metadata_key, tree_node) in metadata_keys {
+                    self.last_scan_file_metadata_hash_map
+                        .insert(path, (metadata_key, tree_node));
+                }
             }
             Err(e) => {
                 println!("Error scanning path {}: {}", self.file_path, e);
@@ -142,15 +151,13 @@ impl Scanner {
             }
         }
 
-        println!("{:#?}", self.tree);
-
         self.last_scan_duration = self.last_scan_time.and_then(|start| start.elapsed().ok());
         println!(
             "Scan completed for path {} in {}. Root hash: {}. Number of files and directories scanned: {}",
             self.file_path,
             self.last_scan_duration.unwrap_or_default().as_secs_f64(),
             self.tree.root_hash,
-            self.last_scan_path_metadata_hash_map.len()
+            self.last_scan_file_metadata_hash_map.len()
         );
         self.publisher
             .notify(&ScannerEvent::ScanCompleted, &self.file_path);
@@ -158,67 +165,28 @@ impl Scanner {
         self.status = ScannerStatus::Idle;
     }
 
-    fn scan_path(&mut self, path: &str) -> Result<TreeNode, ScannerError> {
+    fn scan_path(
+        &self,
+        path: &str,
+    ) -> Result<(TreeNode, Vec<(String, MetadataKey, TreeNode)>), ScannerError> {
         // We use fs::metadata to do a performant scan of the path, without reading
         // the entire contents into memory. We will only read files, and just to compute
-        // their hashes if they have changed since the last scan, based on their metadata.
+        // their hashes if they have changed since the last scan based on their metadata.
 
         let metadata = match fs::metadata(path) {
             Ok(metadata) => metadata,
             Err(e) => {
-                println!("Error reading metadata for {}: {}", path, e);
-                self.publisher.notify(
-                    &ScannerEvent::Error(format!("Error reading metadata: {}", e)),
-                    path,
-                );
-                self.status = ScannerStatus::Error(format!("Error reading metadata: {}", e));
                 return Err(ScannerError::GetMetadataFailed {
                     path: path.to_string(),
                     source: e,
                 });
             }
         };
-
-        let file_size = metadata.len();
-
-        let last_time_modified = match metadata.modified() {
-            Ok(time) => time,
-            Err(e) => {
-                println!("Error getting modified time for {}: {}", path, e);
-                self.publisher.notify(
-                    &ScannerEvent::Error(format!("Error getting modified time: {}", e)),
-                    path,
-                );
-                self.status = ScannerStatus::Error(format!("Error getting modified time: {}", e));
-                return Err(ScannerError::GetMetadataFailed {
-                    path: path.to_string(),
-                    source: e,
-                });
-            }
-        };
-
-        let metadata_key = MetadataKey::new(file_size, last_time_modified);
-
-        if let Some((last_metadata_key, metadata_key_tree_node)) =
-            self.last_scan_path_metadata_hash_map.get(path)
-        {
-            if *last_metadata_key == metadata_key {
-                // If the metadata has not changed since the last scan, we can skip this path
-                return Ok(metadata_key_tree_node.clone());
-            }
-        }
 
         if metadata.is_dir() {
-            // If the path is a directory, we will scan its contents recursively
             let entries = match fs::read_dir(path) {
                 Ok(entries) => entries,
                 Err(e) => {
-                    println!("Error reading directory {}: {}", path, e);
-                    self.publisher.notify(
-                        &ScannerEvent::Error(format!("Error reading directory: {}", e)),
-                        path,
-                    );
-                    self.status = ScannerStatus::Error(format!("Error reading directory: {}", e));
                     return Err(ScannerError::ReadDirFailed {
                         path: path.to_string(),
                         source: e,
@@ -226,7 +194,8 @@ impl Scanner {
                 }
             };
 
-            let entries_tree_nodes = entries
+            let scan_path_results = entries
+                .par_bridge()
                 .filter(|entry| entry.is_ok())
                 .map(|entry| {
                     let entry = entry.unwrap();
@@ -234,43 +203,77 @@ impl Scanner {
                     let entry_path_str = entry_path.to_string_lossy().to_string();
                     self.scan_path(&entry_path_str)
                 })
-                .collect::<Result<Vec<TreeNode>, ScannerError>>()?;
+                .collect::<Result<Vec<(TreeNode, Vec<(String, MetadataKey, TreeNode)>)>, ScannerError>>()?;
+
+            let (entries_tree_nodes, keys): (
+                Vec<TreeNode>,
+                Vec<Vec<(String, MetadataKey, TreeNode)>>,
+            ) = scan_path_results.into_iter().par_bridge().unzip();
+            let vector_of_metadata_keys: Vec<(String, MetadataKey, TreeNode)> =
+                keys.into_iter().flatten().par_bridge().collect();
 
             let tree_node = TreeNode {
                 name: path.to_string(),
-                hash: self.hash_vector_of_hashes(
-                    &entries_tree_nodes
-                        .iter()
-                        .map(|node| node.hash.clone())
-                        .collect::<Vec<String>>(),
-                ),
-                children: entries_tree_nodes.clone(),
+                hash: self.hash_iterator_of_data(entries_tree_nodes.iter().map(|node| &node.hash)),
+                children: entries_tree_nodes,
             };
 
-            self.last_scan_path_metadata_hash_map
-                .insert(path.to_string(), (metadata_key, tree_node.clone()));
-
-            return Ok(tree_node);
+            return Ok((tree_node, vector_of_metadata_keys));
         } else if metadata.is_file() {
-            // If the path is a file, we will compute its hash and update the tree
-            let tree_node = TreeNode {
-                name: path.to_string(),
-                hash: self.hash_file(path)?,
-                children: Vec::new(),
+            let file_size = metadata.len();
+
+            let last_time_modified = match metadata.modified() {
+                Ok(time) => time,
+                Err(e) => {
+                    return Err(ScannerError::GetMetadataFailed {
+                        path: path.to_string(),
+                        source: e,
+                    });
+                }
             };
 
-            self.last_scan_path_metadata_hash_map
-                .insert(path.to_string(), (metadata_key, tree_node.clone()));
+            let metadata_key = MetadataKey::new(file_size, last_time_modified);
 
-            return Ok(tree_node);
+            let last_scan_entry = self.last_scan_file_metadata_hash_map.get(path);
+
+            match last_scan_entry {
+                Some((last_metadata_key, metadata_key_tree_node)) => {
+                    if *last_metadata_key == metadata_key {
+                        return Ok((
+                            metadata_key_tree_node.clone(),
+                            vec![(
+                                path.to_string(),
+                                metadata_key.clone(),
+                                metadata_key_tree_node.clone(),
+                            )],
+                        ));
+                    } else {
+                        let tree_node = TreeNode {
+                            name: path.to_string(),
+                            hash: self.hash_file(path)?,
+                            children: Vec::new(),
+                        };
+
+                        return Ok((
+                            tree_node.clone(),
+                            vec![(path.to_string(), metadata_key.clone(), tree_node)],
+                        ));
+                    }
+                }
+                None => {
+                    let tree_node = TreeNode {
+                        name: path.to_string(),
+                        hash: self.hash_file(path)?,
+                        children: Vec::new(),
+                    };
+
+                    return Ok((
+                        tree_node.clone(),
+                        vec![(path.to_string(), metadata_key.clone(), tree_node)],
+                    ));
+                }
+            }
         } else {
-            // If the path is neither a file nor a directory, we will return an error
-            self.publisher.notify(
-                &ScannerEvent::Error(format!("Path is neither a file nor a directory: {}", path)),
-                path,
-            );
-            self.status =
-                ScannerStatus::Error(format!("Path is neither a file nor a directory: {}", path));
             return Err(ScannerError::GetMetadataFailed {
                 path: path.to_string(),
                 source: std::io::Error::new(
@@ -297,18 +300,18 @@ impl Scanner {
             }
         };
 
-        return Ok(self.hash_vector(&file_contents));
+        return Ok(self.hash_data(&file_contents));
     }
 
-    fn hash_vector(&self, data: &[u8]) -> String {
+    fn hash_data(&self, data: &[u8]) -> String {
         return blake3::hash(data).to_hex().to_string();
     }
 
-    fn hash_vector_of_hashes(&self, hashes: &[String]) -> String {
-        let mut concatenated_hashes = Vec::new();
+    fn hash_iterator_of_data<'a>(&self, hashes: impl Iterator<Item = &'a String>) -> String {
+        let mut hasher = blake3::Hasher::new();
         for hash in hashes {
-            concatenated_hashes.extend_from_slice(hash.as_bytes());
+            hasher.update(hash.as_bytes());
         }
-        return self.hash_vector(&concatenated_hashes);
+        return hasher.finalize().to_hex().to_string();
     }
 }
