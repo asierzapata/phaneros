@@ -16,5 +16,7 @@ fn main() {
         },
     );
 
-    scanner.scan();
+    let scanner_results = scanner.scan();
+
+    println!("Scanner results: {:?}", scanner_results);
 }

@@ -2,22 +2,8 @@ use rayon::prelude::*;
 use std::{collections::HashMap, fs, sync::atomic::AtomicUsize};
 use thiserror::Error;
 
+use crate::folder_tree::{FolderTree, FolderTreeNode};
 use crate::utils::observer::Publisher;
-
-/// A merkle tree representation of a file or directory, where each node is a hash of its contents and its children.
-#[derive(Debug)]
-pub struct Tree {
-    root_hash: String,    // The root hash of the tree
-    nodes: Vec<TreeNode>, // The nodes of the tree
-}
-
-/// A node in the merkle tree, representing a file or directory and its hash.
-#[derive(Debug, Clone)]
-pub struct TreeNode {
-    name: String, // The path of the file or directory represented by the node. Just for debugging, delete later
-    hash: String, // The hash of the node
-    children: Vec<TreeNode>, // The children of the node
-}
 
 #[derive(Debug)]
 pub enum ScannerStatus {
@@ -66,6 +52,26 @@ pub enum ScannerError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("Error hashing file: {path}")]
+    HashFileFailed {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("Error hashing data: {path}")]
+    HashDataFailed {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("Scanner is already scanning")]
+    AlreadyScanning,
+
+    #[error("Scanner failed to count files in path: {0}")]
+    CountFilesFailed(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -86,11 +92,10 @@ impl MetadataKey {
 pub struct Scanner {
     file_path: String,     // The path to the file or directory being scanned
     status: ScannerStatus, // The current status of the scanner
-    tree: Tree,            // The tree representing the contents of the file or directory
     publisher: Publisher<ScannerEvent>, // The publisher for scanner events
     file_count_estimate: usize, // An estimate of the number of files and directories in the path, used for progress reporting
     scan_progress: AtomicUsize, // The number of files and directories scanned so far, used for progress reporting
-    last_scan_file_metadata_hash_map: HashMap<String, (MetadataKey, TreeNode)>, // A map of file paths to their metadata keys and tree nodes from the last scan
+    last_scan_file_metadata_hash_map: HashMap<String, (MetadataKey, FolderTreeNode)>, // A map of file paths to their metadata keys and tree nodes from the last scan
     last_scan_time: Option<std::time::SystemTime>, // The time of the last scan
     last_scan_duration: Option<std::time::Duration>, // The duration of the last scan
 }
@@ -100,10 +105,6 @@ impl Scanner {
         Scanner {
             file_path,
             status: ScannerStatus::Idle,
-            tree: Tree {
-                root_hash: String::new(),
-                nodes: Vec::new(),
-            },
             publisher: Publisher::default(),
             file_count_estimate: 0,
             scan_progress: AtomicUsize::new(0),
@@ -117,11 +118,11 @@ impl Scanner {
         &mut self.publisher
     }
 
-    pub fn scan(&mut self) {
+    pub fn scan(&mut self) -> Result<FolderTree, ScannerError> {
         if let ScannerStatus::Scanning = self.status {
             // If the scanner is already scanning, return early
             // TODO: Consider returning an error that a scan is already in progress
-            return;
+            return Err(ScannerError::AlreadyScanning);
         }
         self.status = ScannerStatus::Scanning;
         self.last_scan_time = Some(std::time::SystemTime::now());
@@ -137,7 +138,10 @@ impl Scanner {
                     );
                     self.status =
                         ScannerStatus::Error(format!("Error counting files in path: {}", e));
-                    return;
+                    return Err(ScannerError::CountFilesFailed(format!(
+                        "Error counting files in path: {}",
+                        e
+                    )));
                 }
             }
         } else {
@@ -149,17 +153,16 @@ impl Scanner {
 
         let file_path = self.file_path.clone();
 
-        match self.scan_path(&file_path) {
+        let folder_tree = match self.scan_path(&file_path) {
             Ok((tree_node, metadata_keys)) => {
-                self.tree = Tree {
-                    root_hash: tree_node.hash.clone(),
-                    nodes: vec![tree_node],
-                };
-
                 self.last_scan_file_metadata_hash_map.clear();
                 for (path, metadata_key, tree_node) in metadata_keys {
                     self.last_scan_file_metadata_hash_map
                         .insert(path, (metadata_key, tree_node));
+                }
+                FolderTree {
+                    root_hash: tree_node.hash.clone(),
+                    nodes: vec![tree_node],
                 }
             }
             Err(e) => {
@@ -169,28 +172,30 @@ impl Scanner {
                     &self.file_path,
                 );
                 self.status = ScannerStatus::Error(format!("Error scanning path: {}", e));
-                return;
+                return Err(e);
             }
-        }
+        };
 
         self.last_scan_duration = self.last_scan_time.and_then(|start| start.elapsed().ok());
         println!(
             "Scan completed for path {} in {}. Root hash: {}. Number of files and directories scanned: {}",
             self.file_path,
             self.last_scan_duration.unwrap_or_default().as_secs_f64(),
-            self.tree.root_hash,
+            folder_tree.root_hash,
             self.last_scan_file_metadata_hash_map.len()
         );
         self.publisher
             .notify(&ScannerEvent::ScanCompleted, &self.file_path);
 
         self.status = ScannerStatus::Idle;
+
+        Ok(folder_tree)
     }
 
     fn scan_path(
         &self,
         path: &str,
-    ) -> Result<(TreeNode, Vec<(String, MetadataKey, TreeNode)>), ScannerError> {
+    ) -> Result<(FolderTreeNode, Vec<(String, MetadataKey, FolderTreeNode)>), ScannerError> {
         // We use fs::metadata to do a performant scan of the path, without reading
         // the entire contents into memory. We will only read files, and just to compute
         // their hashes if they have changed since the last scan based on their metadata.
@@ -225,18 +230,21 @@ impl Scanner {
                     let entry_path_str = entry_path.to_string_lossy().to_string();
                     self.scan_path(&entry_path_str)
                 })
-                .collect::<Result<Vec<(TreeNode, Vec<(String, MetadataKey, TreeNode)>)>, ScannerError>>()?;
+                .collect::<Result<
+                    Vec<(FolderTreeNode, Vec<(String, MetadataKey, FolderTreeNode)>)>,
+                    ScannerError,
+                >>()?;
 
             let (mut entries_tree_nodes, keys): (
-                Vec<TreeNode>,
-                Vec<Vec<(String, MetadataKey, TreeNode)>>,
+                Vec<FolderTreeNode>,
+                Vec<Vec<(String, MetadataKey, FolderTreeNode)>>,
             ) = scan_path_results.into_iter().par_bridge().unzip();
-            let vector_of_metadata_keys: Vec<(String, MetadataKey, TreeNode)> =
+            let vector_of_metadata_keys: Vec<(String, MetadataKey, FolderTreeNode)> =
                 keys.into_iter().flatten().par_bridge().collect();
 
             entries_tree_nodes.sort_by(|a, b| a.name.cmp(&b.name));
 
-            let tree_node = TreeNode {
+            let tree_node = FolderTreeNode {
                 name: path.to_string(),
                 hash: self.hash_iterator_of_data(entries_tree_nodes.iter().map(|node| &node.hash)),
                 children: entries_tree_nodes,
@@ -272,7 +280,7 @@ impl Scanner {
                             )],
                         )
                     } else {
-                        let tree_node = TreeNode {
+                        let tree_node = FolderTreeNode {
                             name: path.to_string(),
                             hash: self.hash_file(path)?,
                             children: Vec::new(),
@@ -285,7 +293,7 @@ impl Scanner {
                     }
                 }
                 None => {
-                    let tree_node = TreeNode {
+                    let tree_node = FolderTreeNode {
                         name: path.to_string(),
                         hash: self.hash_file(path)?,
                         children: Vec::new(),
