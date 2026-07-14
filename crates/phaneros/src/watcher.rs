@@ -4,7 +4,7 @@ use std::sync::mpsc::{Receiver, channel};
 use std::{path::Path, time::Duration};
 use thiserror::Error;
 
-use crate::folder_tree::FolderTree;
+use crate::folder_tree::IndexTree;
 use crate::scanner::Scanner;
 
 #[derive(Error, Debug)]
@@ -20,11 +20,12 @@ pub struct Watcher {
 }
 
 impl Watcher {
-    pub fn new(scanner: Scanner) -> Self {
+    pub fn new(path: String) -> Self {
+        let scanner = Scanner::new(path, false);
         Watcher { scanner }
     }
 
-    pub fn watch(mut self) -> Result<(Receiver<FolderTree>, FolderTree), WatcherError> {
+    pub fn watch(mut self) -> Result<(Receiver<IndexTree>, IndexTree), WatcherError> {
         let (notify_tx, notify_rx) = channel();
         let (watcher_tx, watcher_rx) = channel();
 
@@ -49,20 +50,26 @@ impl Watcher {
             }
         };
 
-        for result in notify_rx {
-            match result {
-                Ok(_) => {
-                    let scanner_results = self.scanner.scan();
-                    // TODO: What we do with the error here? Right now we drop it
-                    if let Ok(folder_tree) = scanner_results {
-                        watcher_tx.send(folder_tree).unwrap();
+        std::thread::spawn(move || {
+            // Keep the debouncer alive for the lifetime of the watch loop.
+            let _debouncer = debouncer;
+
+            for result in notify_rx {
+                match result {
+                    Ok(_) => {
+                        let scanner_results = self.scanner.scan();
+                        // TODO: What we do with the error here? Right now we drop it
+                        if let Ok(folder_tree) = scanner_results {
+                            println!("Folder tree updated, sending to syncer...");
+                            watcher_tx.send(folder_tree).unwrap();
+                        }
                     }
+                    Err(errors) => errors.iter().for_each(|error| {
+                        println!("Error: {:?}", error);
+                    }),
                 }
-                Err(errors) => errors.iter().for_each(|error| {
-                    println!("Error: {:?}", error);
-                }),
             }
-        }
+        });
 
         Ok((watcher_rx, initial_folder_tree))
     }
