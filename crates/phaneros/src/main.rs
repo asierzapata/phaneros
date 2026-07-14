@@ -1,22 +1,20 @@
+use phaneros::folder_tree::FolderTree;
 use phaneros::scanner::Scanner;
+use phaneros::watcher::Watcher;
 
 fn main() {
-    let mut scanner = Scanner::new(String::from("/Users/asierzapata/Documents/"));
+    let watcher = Watcher::new(Scanner::new(
+        String::from("/Users/asierzapata/Documents/"),
+        false,
+    ));
 
-    let scanner_events = scanner.events();
+    let (watcher_rx, initial_folder_tree) = watcher.watch().unwrap();
 
-    scanner_events.subscribe(phaneros::scanner::ScannerEvent::ScanStarted, |file_path| {
-        println!("Scan started for path: {}", file_path);
-    });
+    let mut folder_tree: FolderTree = initial_folder_tree;
 
-    scanner_events.subscribe(
-        phaneros::scanner::ScannerEvent::ScanCompleted,
-        |file_path| {
-            println!("Scan completed for path: {}", file_path);
-        },
-    );
-
-    let scanner_results = scanner.scan();
-
-    println!("Scanner results: {:?}", scanner_results);
+    // Listen for folder tree updates
+    for updated_folder_tree in watcher_rx {
+        println!("Watcher received updated folder tree");
+        folder_tree = updated_folder_tree;
+    }
 }

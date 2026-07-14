@@ -9,7 +9,6 @@ use crate::utils::observer::Publisher;
 pub enum ScannerStatus {
     Idle,          // The scanner is idle and not currently scanning
     Scanning,      // The scanner is currently scanning the path
-    Syncing, // The scanner is currently syncing the local representation with the remote representation
     Error(String), // An error occurred during scanning, with an error message
 }
 
@@ -98,12 +97,14 @@ pub struct Scanner {
     last_scan_file_metadata_hash_map: HashMap<String, (MetadataKey, FolderTreeNode)>, // A map of file paths to their metadata keys and tree nodes from the last scan
     last_scan_time: Option<std::time::SystemTime>, // The time of the last scan
     last_scan_duration: Option<std::time::Duration>, // The duration of the last scan
+    should_show_progress: bool,                    // Whether to show progress during scanning
 }
 
 impl Scanner {
-    pub fn new(file_path: String) -> Self {
+    pub fn new(file_path: String, should_show_progress: bool) -> Scanner {
         Scanner {
             file_path,
+            should_show_progress,
             status: ScannerStatus::Idle,
             publisher: Publisher::default(),
             file_count_estimate: 0,
@@ -116,6 +117,10 @@ impl Scanner {
 
     pub fn events(&mut self) -> &mut Publisher<ScannerEvent> {
         &mut self.publisher
+    }
+
+    pub fn get_path(&self) -> &str {
+        &self.file_path
     }
 
     pub fn scan(&mut self) -> Result<FolderTree, ScannerError> {
@@ -321,6 +326,10 @@ impl Scanner {
     }
 
     fn notify_progress(&self, _path: &str) {
+        if !self.should_show_progress {
+            return;
+        }
+
         let progress = self
             .scan_progress
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
