@@ -11,6 +11,12 @@ pub struct Publisher<E> {
 }
 
 impl<E: Eq + Hash> Publisher<E> {
+    pub fn new() -> Self {
+        Publisher {
+            events: HashMap::new(),
+        }
+    }
+
     pub fn subscribe(&mut self, event_type: E, listener: Subscriber) {
         self.events.entry(event_type).or_default().push(listener);
     }
