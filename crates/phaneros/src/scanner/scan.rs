@@ -2,10 +2,11 @@ use rayon::prelude::*;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, RwLock};
 use std::{fs, time::SystemTime};
 use thiserror::Error;
 
-use crate::folder_tree::{FileChunk, FileIndexTreeNode, FolderIndexTreeNode, IndexTree};
+use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore};
 use crate::scanner::file_chunker::{FileChunker, FileChunkerError};
 use crate::utils::observer::Publisher;
 
@@ -115,27 +116,38 @@ pub enum EntryRecord {
 
 #[derive(Debug)]
 pub struct FolderRecord {
-    pub metadata_hash: String,
+    pub hash: Hash,
 }
 
+/// Chunks are not stored here: on a cache hit they are recovered from the
+/// node store via `content_hash`, which retains file nodes across scans.
 #[derive(Debug)]
 pub struct FileRecord {
     pub metadata_hash: String,
-    pub content_hash: Option<String>,
-    pub chunks: Vec<ChunkRecord>,
+    pub content_hash: Hash,
 }
 
-#[derive(Debug, Clone)]
-pub struct ChunkRecord {
-    pub index: usize,
-    pub hash: String,
-    pub size: u64,
-}
+/// What scanning a folder yields: the edge to it from its parent, every node
+/// discovered beneath it (to be committed to the store), and the metadata
+/// records for the scan snapshot cache.
+type ScannedFolder = (Entry, Vec<(Hash, Node)>, HashMap<EntryKey, EntryRecord>);
+
+/// What scanning a file yields: the edge to it, its node if it wasn't already
+/// in the store (cache hit), and its snapshot record.
+type ScannedFile = (Entry, Option<(Hash, Node)>, (EntryKey, EntryRecord));
 
 #[derive(Debug)]
 enum ScannedEntry {
-    Folder(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>),
-    File(FileIndexTreeNode, (EntryKey, EntryRecord)),
+    Folder {
+        entry: Entry,
+        nodes: Vec<(Hash, Node)>,
+        records: HashMap<EntryKey, EntryRecord>,
+    },
+    File {
+        entry: Entry,
+        node: Option<(Hash, Node)>,
+        record: (EntryKey, EntryRecord),
+    },
 }
 
 fn base_name(path: &Path) -> String {
@@ -156,6 +168,7 @@ pub struct Scanner {
     snapshot_buffer_size: usize,
     current_snapshot: Option<ScanSnapshot>,
     scan_snapshots: VecDeque<ScanSnapshot>,
+    node_store: Arc<RwLock<InMemoryNodeStore>>,
 }
 
 impl Scanner {
@@ -169,11 +182,20 @@ impl Scanner {
             snapshot_buffer_size: 10,
             current_snapshot: None,
             scan_snapshots: VecDeque::new(),
+            node_store: Arc::new(RwLock::new(InMemoryNodeStore::new())),
         }
     }
 
     pub fn events(&mut self) -> &mut Publisher<ScannerEvent> {
         &mut self.publisher
+    }
+
+    /// The content-addressed store this scanner writes into. Readers (syncer,
+    /// future GUI) can hold a clone of this handle: nodes are immutable, so a
+    /// reader walking from any root hash it has seen always gets a consistent
+    /// tree, even while a new scan is committing.
+    pub fn store(&self) -> Arc<RwLock<InMemoryNodeStore>> {
+        Arc::clone(&self.node_store)
     }
 
     pub fn get_path(&self) -> &Path {
@@ -242,7 +264,7 @@ impl Scanner {
         }
     }
 
-    pub fn scan(&mut self) -> Result<IndexTree, ScannerError> {
+    pub fn scan(&mut self) -> Result<Hash, ScannerError> {
         if let ScannerStatus::Scanning = self.status {
             return Err(ScannerError::AlreadyScanning);
         }
@@ -256,15 +278,19 @@ impl Scanner {
 
         let file_path = self.file_path.clone();
 
-        let folder_tree = match self.scan_path(&file_path) {
-            Ok((index_node, scanned_entries)) => {
-                let tree = IndexTree {
-                    root_hash: index_node.hash,
-                    folders: index_node.folders,
-                    files: index_node.files,
-                };
+        let root_hash = match self.scan_path(&file_path) {
+            Ok((entry, nodes, scanned_entries)) => {
+                // Commit the whole scan in one write lock so readers never see
+                // a root whose nodes aren't all present yet.
+                {
+                    let mut store = self.node_store.write().unwrap();
+                    for (hash, node) in nodes {
+                        store.insert(hash, node);
+                    }
+                    store.set_root(entry.hash.clone());
+                }
                 self.complete_snapshot(scanned_entries);
-                tree
+                entry.hash
             }
             Err(e) => {
                 let error_msg = format!("Error scanning path: {}", e);
@@ -285,13 +311,10 @@ impl Scanner {
 
         self.status = ScannerStatus::Idle;
 
-        Ok(folder_tree)
+        Ok(root_hash)
     }
 
-    fn scan_path(
-        &self,
-        path: &Path,
-    ) -> Result<(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>), ScannerError> {
+    fn scan_path(&self, path: &Path) -> Result<ScannedFolder, ScannerError> {
         let metadata = fs::metadata(path).map_err(|e| ScannerError::GetMetadataFailed {
             path: path.display().to_string(),
             source: e,
@@ -300,16 +323,25 @@ impl Scanner {
         if metadata.is_dir() {
             self.scan_directory(path)
         } else if metadata.is_file() {
-            self.scan_file(path, &metadata)
-                .map(|(index_node, scanned_entry)| {
+            // When the root is a file, wrap it in a synthetic folder so the
+            // tree always has a folder root.
+            self.scan_file(path, &metadata).map(
+                |(file_entry, file_node, (entry_key, entry_record))| {
                     let mut scanned_entries = HashMap::new();
-                    scanned_entries.insert(scanned_entry.0, scanned_entry.1);
+                    scanned_entries.insert(entry_key, entry_record);
+
+                    let (root_hash, root_node) = Node::folder(vec![], vec![file_entry]);
+
+                    let mut nodes: Vec<(Hash, Node)> = file_node.into_iter().collect();
+                    nodes.push((root_hash.clone(), root_node));
 
                     (
-                        FolderIndexTreeNode::new(base_name(path), vec![], vec![index_node]),
+                        Entry::new(base_name(path), root_hash),
+                        nodes,
                         scanned_entries,
                     )
-                })
+                },
+            )
         } else {
             Err(ScannerError::GetMetadataFailed {
                 path: path.display().to_string(),
@@ -318,10 +350,7 @@ impl Scanner {
         }
     }
 
-    fn scan_directory(
-        &self,
-        path: &Path,
-    ) -> Result<(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>), ScannerError> {
+    fn scan_directory(&self, path: &Path) -> Result<ScannedFolder, ScannerError> {
         // TODO: Integrate the `ignore` crate to respect .gitignore rules and skip
         // directories like .git/, node_modules/, target/
         let read_dir = fs::read_dir(path).map_err(|e| ScannerError::ReadDirFailed {
@@ -351,11 +380,19 @@ impl Scanner {
                     })?;
 
                 if metadata.is_dir() {
-                    let (index_node, child_entries) = self.scan_directory(&entry_path)?;
-                    Ok(ScannedEntry::Folder(index_node, child_entries))
+                    let (entry, nodes, records) = self.scan_directory(&entry_path)?;
+                    Ok(ScannedEntry::Folder {
+                        entry,
+                        nodes,
+                        records,
+                    })
                 } else if metadata.is_file() {
-                    let (index_node, scanned_entry) = self.scan_file(&entry_path, &metadata)?;
-                    Ok(ScannedEntry::File(index_node, scanned_entry))
+                    let (entry, node, record) = self.scan_file(&entry_path, &metadata)?;
+                    Ok(ScannedEntry::File {
+                        entry,
+                        node,
+                        record,
+                    })
                 } else {
                     Err(ScannerError::GetMetadataFailed {
                         path: entry_path.display().to_string(),
@@ -365,106 +402,92 @@ impl Scanner {
             })
             .collect::<Result<Vec<ScannedEntry>, ScannerError>>()?;
 
-        let mut folder_index_nodes = Vec::new();
-        let mut file_index_nodes = Vec::new();
+        let mut folder_entries = Vec::new();
+        let mut file_entries = Vec::new();
+        let mut nodes: Vec<(Hash, Node)> = Vec::new();
         let mut scanned_entry_map: HashMap<EntryKey, EntryRecord> = HashMap::new();
 
         for scanned_entry in scanned_entries {
             match scanned_entry {
-                ScannedEntry::Folder(index_node, child_entries) => {
-                    folder_index_nodes.push(index_node);
-                    scanned_entry_map.extend(child_entries);
+                ScannedEntry::Folder {
+                    entry,
+                    nodes: child_nodes,
+                    records,
+                } => {
+                    folder_entries.push(entry);
+                    nodes.extend(child_nodes);
+                    scanned_entry_map.extend(records);
                 }
-                ScannedEntry::File(index_node, (entry_key, entry_record)) => {
-                    file_index_nodes.push(index_node);
+                ScannedEntry::File {
+                    entry,
+                    node,
+                    record: (entry_key, entry_record),
+                } => {
+                    file_entries.push(entry);
+                    nodes.extend(node);
                     scanned_entry_map.insert(entry_key, entry_record);
                 }
             }
         }
 
-        folder_index_nodes.sort_by(|a, b| a.name.cmp(&b.name));
-        file_index_nodes.sort_by(|a, b| a.name.cmp(&b.name));
-
-        let folder_index_node = FolderIndexTreeNode::from_children(
-            base_name(path),
-            folder_index_nodes,
-            file_index_nodes,
-        );
+        // Node::folder sorts entries internally, so the hash is canonical
+        // regardless of the order read_dir returned them in.
+        let (folder_hash, folder_node) = Node::folder(folder_entries, file_entries);
+        nodes.push((folder_hash.clone(), folder_node));
 
         scanned_entry_map.insert(
             self.entry_key(path),
             EntryRecord::Folder(FolderRecord {
-                metadata_hash: folder_index_node.hash.clone(),
+                hash: folder_hash.clone(),
             }),
         );
 
-        Ok((folder_index_node, scanned_entry_map))
+        Ok((
+            Entry::new(base_name(path), folder_hash),
+            nodes,
+            scanned_entry_map,
+        ))
     }
 
-    fn scan_file(
-        &self,
-        path: &Path,
-        metadata: &fs::Metadata,
-    ) -> Result<(FileIndexTreeNode, (EntryKey, EntryRecord)), ScannerError> {
+    fn scan_file(&self, path: &Path, metadata: &fs::Metadata) -> Result<ScannedFile, ScannerError> {
         let metadata_key = MetadataKey::new(metadata);
         let entry_key = self.entry_key(path);
 
-        let last_scan_entry = self
+        // Cache hit: metadata unchanged and the file node is already in the
+        // store from a previous scan, so there is nothing to hash or insert.
+        let cached_hash = self
             .scan_snapshots
             .back()
-            .and_then(|snapshot| snapshot.scanned_entries.get(&entry_key));
-
-        let file_name = base_name(path);
-
-        let index_node = match last_scan_entry {
-            Some(EntryRecord::File(last_file_record))
-                if last_file_record.metadata_hash == metadata_key.0 =>
-            {
-                let mut sorted_chunks = last_file_record.chunks.clone();
-                sorted_chunks.sort_by_key(|chunk| chunk.index);
-
-                let chunks: Vec<FileChunk> = sorted_chunks
-                    .into_iter()
-                    .map(|chunk| FileChunk {
-                        hash: chunk.hash,
-                        size: chunk.size,
-                    })
-                    .collect();
-
-                let hash = last_file_record.content_hash.clone().unwrap_or_else(|| {
-                    FileIndexTreeNode::from_chunks(file_name.clone(), chunks.clone()).hash
-                });
-
-                FileIndexTreeNode {
-                    name: file_name.clone(),
-                    hash,
-                    chunks,
+            .and_then(|snapshot| snapshot.scanned_entries.get(&entry_key))
+            .and_then(|record| match record {
+                EntryRecord::File(file_record) if file_record.metadata_hash == metadata_key.0 => {
+                    Some(file_record.content_hash.clone())
                 }
-            }
-            _ => {
+                _ => None,
+            })
+            .filter(|hash| self.node_store.read().unwrap().get_node(hash).is_some());
+
+        let (content_hash, node) = match cached_hash {
+            Some(hash) => (hash, None),
+            None => {
                 let file_chunks = self.file_chunker.chunk_file(path)?;
-                FileIndexTreeNode::from_chunks(file_name.clone(), file_chunks)
+                let (hash, node) = Node::file(file_chunks);
+                (hash.clone(), Some((hash, node)))
             }
         };
 
         let entry_record = EntryRecord::File(FileRecord {
             metadata_hash: metadata_key.0,
-            content_hash: Some(index_node.hash.clone()),
-            chunks: index_node
-                .chunks
-                .iter()
-                .enumerate()
-                .map(|(index, chunk)| ChunkRecord {
-                    index,
-                    hash: chunk.hash.clone(),
-                    size: chunk.size,
-                })
-                .collect(),
+            content_hash: content_hash.clone(),
         });
 
         self.notify_progress();
 
-        Ok((index_node, (entry_key, entry_record)))
+        Ok((
+            Entry::new(base_name(path), content_hash),
+            node,
+            (entry_key, entry_record),
+        ))
     }
 
     fn notify_progress(&self) {

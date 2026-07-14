@@ -1,30 +1,37 @@
-use crate::folder_tree::IndexTree;
+use std::sync::{Arc, RwLock};
+
+use crate::node_store::{Hash, InMemoryNodeStore};
 
 pub struct Syncer {
-    watcher_rx: std::sync::mpsc::Receiver<IndexTree>,
-    initial_folder_tree: IndexTree,
+    watcher_rx: std::sync::mpsc::Receiver<Hash>,
+    initial_root_hash: Hash,
+    node_store: Arc<RwLock<InMemoryNodeStore>>,
 }
 
 impl Syncer {
     pub fn new(
-        watcher_rx: std::sync::mpsc::Receiver<IndexTree>,
-        initial_folder_tree: IndexTree,
+        watcher_rx: std::sync::mpsc::Receiver<Hash>,
+        initial_root_hash: Hash,
+        node_store: Arc<RwLock<InMemoryNodeStore>>,
     ) -> Self {
         Syncer {
             watcher_rx,
-            initial_folder_tree,
+            initial_root_hash,
+            node_store,
         }
     }
 
     pub fn run(&self) {
         println!(
-            "Syncer started with initial folder tree: {:?}",
-            self.initial_folder_tree
+            "Syncer started with initial root hash: {}",
+            self.initial_root_hash
         );
-        for updated_folder_tree in &self.watcher_rx {
-            println!("Syncer received updated folder tree");
-            println!("Updated folder tree: {:?}", updated_folder_tree);
-            // Here you can implement the logic to sync the updated folder tree with your database or any other storage.
+        for updated_root_hash in &self.watcher_rx {
+            let node_count = self.node_store.read().unwrap().len();
+            println!(
+                "Syncer received updated root hash: {} ({} nodes in store)",
+                updated_root_hash, node_count
+            );
         }
     }
 }

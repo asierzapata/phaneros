@@ -1,4 +1,4 @@
-pub mod folder_tree;
+pub mod node_store;
 pub mod scanner;
 pub mod syncer;
 pub mod utils;

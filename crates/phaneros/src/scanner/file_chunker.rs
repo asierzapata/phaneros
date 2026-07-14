@@ -2,7 +2,7 @@ use std::{fs, io::Read, path::Path};
 
 use thiserror::Error;
 
-use crate::folder_tree::FileChunk;
+use crate::node_store::FileChunk;
 
 #[derive(Error, Debug)]
 pub enum FileChunkerError {

@@ -9,9 +9,9 @@ fn main() {
     println!("Watcher started, waiting for changes...");
 
     // TODO: Handle the error properly instead of unwrapping.
-    let (watcher_rx, initial_folder_tree) = watcher.watch().unwrap();
+    let (watcher_rx, initial_root_hash, node_store) = watcher.watch().unwrap();
 
-    let syncer = Syncer::new(watcher_rx, initial_folder_tree);
+    let syncer = Syncer::new(watcher_rx, initial_root_hash, node_store);
 
     syncer.run();
 }

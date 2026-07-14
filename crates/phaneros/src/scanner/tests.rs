@@ -3,12 +3,80 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::folder_tree::{FileChunk, FileIndexTreeNode, FolderIndexTreeNode};
+use crate::node_store::{FileChunk, Hash, InMemoryNodeStore, Node, NodeStore};
 use crate::scanner::file_chunker::FileChunker;
-use crate::scanner::scanner::{Scanner, ScannerError};
+use crate::scanner::{Scanner, ScannerError};
 
 fn new_scanner(path: &Path) -> Scanner {
     Scanner::new(path, false)
+}
+
+/// A materialized recursive view over the node store, so tests can assert
+/// tree structure ergonomically instead of chasing hashes by hand.
+struct TreeView {
+    root_hash: Hash,
+    folders: Vec<FolderView>,
+    files: Vec<FileView>,
+}
+
+struct FolderView {
+    name: String,
+    hash: Hash,
+    folders: Vec<FolderView>,
+    files: Vec<FileView>,
+}
+
+struct FileView {
+    name: String,
+    hash: Hash,
+    chunks: Vec<FileChunk>,
+}
+
+/// Scans and expands the resulting root hash into a TreeView.
+fn scan_view(scanner: &mut Scanner) -> Result<TreeView, ScannerError> {
+    let root_hash = scanner.scan()?;
+    let store = scanner.store();
+    let store = store.read().unwrap();
+    let (folders, files) = expand_folder(&store, &root_hash);
+    Ok(TreeView {
+        root_hash,
+        folders,
+        files,
+    })
+}
+
+fn expand_folder(store: &InMemoryNodeStore, hash: &Hash) -> (Vec<FolderView>, Vec<FileView>) {
+    match store.get_node(hash) {
+        Some(Node::Folder { folders, files }) => (
+            folders
+                .iter()
+                .map(|entry| {
+                    let (sub_folders, sub_files) = expand_folder(store, &entry.hash);
+                    FolderView {
+                        name: entry.name.clone(),
+                        hash: entry.hash.clone(),
+                        folders: sub_folders,
+                        files: sub_files,
+                    }
+                })
+                .collect(),
+            files
+                .iter()
+                .map(|entry| {
+                    let chunks = match store.get_node(&entry.hash) {
+                        Some(Node::File { chunks }) => chunks.clone(),
+                        _ => panic!("file node {} missing from store", entry.hash),
+                    };
+                    FileView {
+                        name: entry.name.clone(),
+                        hash: entry.hash.clone(),
+                        chunks,
+                    }
+                })
+                .collect(),
+        ),
+        _ => panic!("folder node {} missing from store", hash),
+    }
 }
 
 fn create_file(dir: &Path, name: &str, content: &[u8]) {
@@ -38,9 +106,9 @@ mod basic_structure {
         fs::write(&file_path, b"").unwrap();
 
         let mut scanner = new_scanner(&file_path);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
-        // When root is a file, it's wrapped in a synthetic FolderIndexTreeNode
+        // When root is a file, it's wrapped in a synthetic FolderView
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.folders.len(), 0);
         assert_eq!(tree.files[0].name, "empty.txt");
@@ -54,7 +122,7 @@ mod basic_structure {
         fs::create_dir(&dir_path).unwrap();
 
         let mut scanner = new_scanner(&dir_path);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 0);
         assert_eq!(tree.folders.len(), 0);
@@ -69,13 +137,13 @@ mod basic_structure {
         let file_path = tmp.path().join("empty.txt");
         fs::write(&file_path, b"").unwrap();
         let mut file_scanner = new_scanner(&file_path);
-        let file_tree = file_scanner.scan().unwrap();
+        let file_tree = scan_view(&mut file_scanner).unwrap();
 
         // Empty directory
         let dir_path = tmp.path().join("empty_dir");
         fs::create_dir(&dir_path).unwrap();
         let mut dir_scanner = new_scanner(&dir_path);
-        let dir_tree = dir_scanner.scan().unwrap();
+        let dir_tree = scan_view(&mut dir_scanner).unwrap();
 
         // The empty file gets wrapped in a synthetic folder, so compare the file node hash
         // with the empty folder root_hash
@@ -92,7 +160,7 @@ mod basic_structure {
         create_file(&dir, "hello.txt", b"hello world");
 
         let mut scanner = new_scanner(&dir);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.folders.len(), 0);
@@ -109,7 +177,7 @@ mod basic_structure {
         let _sub = create_dir(&root, "subdir");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.folders.len(), 1);
         assert_eq!(tree.files.len(), 0);
@@ -127,7 +195,7 @@ mod basic_structure {
         create_file(&sub, "nested.txt", b"nested");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 2);
         assert_eq!(tree.folders.len(), 1);
@@ -151,10 +219,10 @@ mod hash_determinism {
         create_file(&dir_b, "beta.txt", b"content");
 
         let mut scanner_a = new_scanner(&dir_a);
-        let tree_a = scanner_a.scan().unwrap();
+        let tree_a = scan_view(&mut scanner_a).unwrap();
 
         let mut scanner_b = new_scanner(&dir_b);
-        let tree_b = scanner_b.scan().unwrap();
+        let tree_b = scan_view(&mut scanner_b).unwrap();
 
         // File hashes should be same (same content, hash doesn't include name)
         assert_eq!(tree_a.files[0].hash, tree_b.files[0].hash);
@@ -173,10 +241,10 @@ mod hash_determinism {
         create_file(&dir_b, "file.txt", b"content_b");
 
         let mut scanner_a = new_scanner(&dir_a);
-        let tree_a = scanner_a.scan().unwrap();
+        let tree_a = scan_view(&mut scanner_a).unwrap();
 
         let mut scanner_b = new_scanner(&dir_b);
-        let tree_b = scanner_b.scan().unwrap();
+        let tree_b = scan_view(&mut scanner_b).unwrap();
 
         assert_ne!(tree_a.files[0].hash, tree_b.files[0].hash);
         assert_ne!(tree_a.root_hash, tree_b.root_hash);
@@ -187,7 +255,7 @@ mod hash_determinism {
         // Two directories with same file content but different dir names scanned independently.
         // The root_hash includes the folder name in child folder hashes, but the root itself
         // just uses [0] prefix + children. Since the scanner's root is the folder, the folder name
-        // appears in the FolderIndexTreeNode name but the root_hash computation uses from_children
+        // appears in the FolderView name but the root_hash computation uses from_children
         // which doesn't include the folder's own name. So two roots with identical children will
         // have identical root_hashes. This tests that structure matters.
         let tmp = TempDir::new().unwrap();
@@ -201,10 +269,10 @@ mod hash_determinism {
         create_file(&sub_b, "file.txt", b"hello");
 
         let mut scanner_a = new_scanner(&dir_a);
-        let tree_a = scanner_a.scan().unwrap();
+        let tree_a = scan_view(&mut scanner_a).unwrap();
 
         let mut scanner_b = new_scanner(&dir_b);
-        let tree_b = scanner_b.scan().unwrap();
+        let tree_b = scan_view(&mut scanner_b).unwrap();
 
         // Different subfolder names mean different root hashes
         assert_ne!(tree_a.root_hash, tree_b.root_hash);
@@ -218,8 +286,8 @@ mod hash_determinism {
         create_file(&root, "file.txt", b"stable content");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
-        let tree2 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree1.root_hash, tree2.root_hash);
     }
@@ -241,10 +309,10 @@ mod hash_determinism {
         create_file(&dir_b, "aaa.txt", b"a");
 
         let mut scanner_a = new_scanner(&dir_a);
-        let tree_a = scanner_a.scan().unwrap();
+        let tree_a = scan_view(&mut scanner_a).unwrap();
 
         let mut scanner_b = new_scanner(&dir_b);
-        let tree_b = scanner_b.scan().unwrap();
+        let tree_b = scan_view(&mut scanner_b).unwrap();
 
         assert_eq!(tree_a.root_hash, tree_b.root_hash);
     }
@@ -259,10 +327,10 @@ mod hash_determinism {
         create_file(&dir_with_file, "empty.txt", b"");
 
         let mut scanner_empty = new_scanner(&empty_dir);
-        let tree_empty = scanner_empty.scan().unwrap();
+        let tree_empty = scan_view(&mut scanner_empty).unwrap();
 
         let mut scanner_file = new_scanner(&dir_with_file);
-        let tree_file = scanner_file.scan().unwrap();
+        let tree_file = scan_view(&mut scanner_file).unwrap();
 
         assert_ne!(tree_empty.root_hash, tree_file.root_hash);
     }
@@ -277,10 +345,10 @@ mod hash_determinism {
         create_dir(&dir_with_sub, "child");
 
         let mut scanner_empty = new_scanner(&empty_dir);
-        let tree_empty = scanner_empty.scan().unwrap();
+        let tree_empty = scan_view(&mut scanner_empty).unwrap();
 
         let mut scanner_sub = new_scanner(&dir_with_sub);
-        let tree_sub = scanner_sub.scan().unwrap();
+        let tree_sub = scan_view(&mut scanner_sub).unwrap();
 
         assert_ne!(tree_empty.root_hash, tree_sub.root_hash);
     }
@@ -439,8 +507,8 @@ mod incremental_scan {
         create_file(&root, "b.txt", b"bbb");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
-        let tree2 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree1.root_hash, tree2.root_hash);
         assert_eq!(tree1.files.len(), tree2.files.len());
@@ -458,7 +526,7 @@ mod incremental_scan {
         create_file(&root, "mutable.txt", b"original");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
 
         // Modify the file and force mtime change with a far-future timestamp
         create_file(&root, "mutable.txt", b"modified");
@@ -468,7 +536,7 @@ mod incremental_scan {
         )
         .unwrap();
 
-        let tree2 = scanner.scan().unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         assert_ne!(tree1.root_hash, tree2.root_hash);
         assert_ne!(tree1.files[0].hash, tree2.files[0].hash);
@@ -482,10 +550,10 @@ mod incremental_scan {
         create_file(&root, "existing.txt", b"exists");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
 
         create_file(&root, "new_file.txt", b"new content");
-        let tree2 = scanner.scan().unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         assert_ne!(tree1.root_hash, tree2.root_hash);
         assert_eq!(tree1.files.len(), 1);
@@ -501,10 +569,10 @@ mod incremental_scan {
         create_file(&root, "remove.txt", b"remove");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
 
         fs::remove_file(root.join("remove.txt")).unwrap();
-        let tree2 = scanner.scan().unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         assert_ne!(tree1.root_hash, tree2.root_hash);
         assert_eq!(tree1.files.len(), 2);
@@ -519,10 +587,10 @@ mod incremental_scan {
         create_file(&root, "original_name.txt", b"content");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
 
         fs::rename(root.join("original_name.txt"), root.join("renamed.txt")).unwrap();
-        let tree2 = scanner.scan().unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         assert_ne!(tree1.root_hash, tree2.root_hash);
         assert_eq!(tree1.files[0].name, "original_name.txt");
@@ -549,7 +617,7 @@ mod directory_tree_structure {
         create_file(&current, "deep.txt", b"deep content");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         // Traverse the tree to verify depth
         let mut node = &tree.folders[0];
@@ -579,7 +647,7 @@ mod directory_tree_structure {
         }
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), file_count);
         assert_eq!(tree.folders.len(), 0);
@@ -598,7 +666,7 @@ mod directory_tree_structure {
         create_dir(&root, "banana");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         let names: Vec<&str> = tree.folders.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, vec!["apple", "banana", "mango", "zebra"]);
@@ -617,7 +685,7 @@ mod directory_tree_structure {
         create_file(&root, "banana.txt", b"b");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         let names: Vec<&str> = tree.files.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(
@@ -639,7 +707,7 @@ mod directory_tree_structure {
         create_dir(&root, "dir_3");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 2);
         assert_eq!(tree.folders.len(), 3);
@@ -667,7 +735,7 @@ mod directory_tree_structure {
         create_file(&sub_b_nested, "nested_file.txt", b"nested");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.files[0].name, "root_file.txt");
@@ -689,10 +757,7 @@ mod tree_completeness {
     use super::*;
 
     /// Recursively counts all files and folders in an IndexTree.
-    fn count_entries(
-        folders: &[FolderIndexTreeNode],
-        files: &[FileIndexTreeNode],
-    ) -> (usize, usize) {
+    fn count_entries(folders: &[FolderView], files: &[FileView]) -> (usize, usize) {
         let mut total_folders = folders.len();
         let mut total_files = files.len();
         for folder in folders {
@@ -704,10 +769,7 @@ mod tree_completeness {
     }
 
     /// Collects all file names recursively.
-    fn collect_file_names(
-        folders: &[FolderIndexTreeNode],
-        files: &[FileIndexTreeNode],
-    ) -> Vec<String> {
+    fn collect_file_names(folders: &[FolderView], files: &[FileView]) -> Vec<String> {
         let mut names: Vec<String> = files.iter().map(|f| f.name.clone()).collect();
         for folder in folders {
             names.extend(collect_file_names(&folder.folders, &folder.files));
@@ -716,7 +778,7 @@ mod tree_completeness {
     }
 
     /// Collects all folder names recursively.
-    fn collect_folder_names(folders: &[FolderIndexTreeNode]) -> Vec<String> {
+    fn collect_folder_names(folders: &[FolderView]) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         for folder in folders {
             names.push(folder.name.clone());
@@ -738,7 +800,7 @@ mod tree_completeness {
         create_file(&deep, "c.txt", b"c");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         let file_names = collect_file_names(&tree.folders, &tree.files);
         assert!(file_names.contains(&"a.txt".to_string()));
@@ -759,7 +821,7 @@ mod tree_completeness {
         let _deep = create_dir(&nested, "deep");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         let folder_names = collect_folder_names(&tree.folders);
         assert!(folder_names.contains(&"sub_a".to_string()));
@@ -783,7 +845,7 @@ mod tree_completeness {
         let _empty = create_dir(&root, "empty");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         let (total_folders, total_files) = count_entries(&tree.folders, &tree.files);
         assert_eq!(total_files, 3);
@@ -835,7 +897,7 @@ mod snapshot_management {
         // Run 15 scans (more than buffer size of 10)
         let mut last_hash = String::new();
         for _ in 0..15 {
-            let tree = scanner.scan().unwrap();
+            let tree = scan_view(&mut scanner).unwrap();
             if !last_hash.is_empty() {
                 assert_eq!(tree.root_hash, last_hash);
             }
@@ -853,8 +915,8 @@ mod snapshot_management {
         let mut scanner = new_scanner(&root);
 
         // Build up cache with multiple scans
-        let tree1 = scanner.scan().unwrap();
-        let tree2 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
         assert_eq!(tree1.root_hash, tree2.root_hash);
 
         // Now modify with a far-future mtime to guarantee cache invalidation
@@ -865,7 +927,7 @@ mod snapshot_management {
         )
         .unwrap();
 
-        let tree3 = scanner.scan().unwrap();
+        let tree3 = scan_view(&mut scanner).unwrap();
         assert_ne!(tree2.root_hash, tree3.root_hash);
     }
 
@@ -879,7 +941,7 @@ mod snapshot_management {
         let mut scanner = new_scanner(&root);
 
         // Successful scan
-        let tree1 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
         let original_hash = tree1.root_hash.clone();
 
         // Remove the root directory to cause an error
@@ -894,7 +956,7 @@ mod snapshot_management {
         create_file(&root, "file.txt", b"content");
 
         // Scanner should recover and produce a successful scan
-        let tree3 = scanner.scan().unwrap();
+        let tree3 = scan_view(&mut scanner).unwrap();
         assert_eq!(tree3.root_hash, original_hash);
     }
 }
@@ -912,7 +974,7 @@ mod hash_algorithm {
         create_file(&root, "test.txt", content);
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         // Manually compute expected hash
         let chunk_hash = blake3::hash(content).to_hex().to_string();
@@ -934,7 +996,7 @@ mod hash_algorithm {
         create_file(&root, "file.txt", content);
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         // Manually compute expected folder hash
         let chunk_hash = blake3::hash(content).to_hex().to_string();
@@ -963,7 +1025,7 @@ mod hash_algorithm {
         fs::create_dir(&root).unwrap();
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         let mut hasher = blake3::Hasher::new();
         hasher.update(&[0]);
@@ -979,7 +1041,7 @@ mod hash_algorithm {
         fs::write(&file_path, b"").unwrap();
 
         let mut scanner = new_scanner(&file_path);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         let mut hasher = blake3::Hasher::new();
         hasher.update(&[1]);
@@ -999,7 +1061,7 @@ mod hash_algorithm {
         create_file(&root, "beta.txt", b"beta");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         // Manually compute
         // First: the subfolder "alpha" which contains "inside.txt"
@@ -1053,7 +1115,7 @@ mod edge_cases {
         create_file(&root, "hello world.txt", b"spaces");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.files[0].name, "hello world.txt");
@@ -1069,7 +1131,7 @@ mod edge_cases {
         create_file(&root, "café.txt", b"accents");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 3);
         let names: Vec<&str> = tree.files.iter().map(|f| f.name.as_str()).collect();
@@ -1087,7 +1149,7 @@ mod edge_cases {
         create_file(&sub, "file.txt", b"in unicode dir");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.folders.len(), 1);
         assert_eq!(tree.folders[0].name, "données");
@@ -1105,7 +1167,7 @@ mod edge_cases {
         create_file(&dotdir, "settings.json", b"{}");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         let file_names: Vec<&str> = tree.files.iter().map(|f| f.name.as_str()).collect();
         assert!(file_names.contains(&".hidden"));
@@ -1122,7 +1184,7 @@ mod edge_cases {
         fs::write(&file_path, b"standalone file content").unwrap();
 
         let mut scanner = new_scanner(&file_path);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         // Root is a file, wrapped in synthetic folder
         assert_eq!(tree.files.len(), 1);
@@ -1145,7 +1207,7 @@ mod edge_cases {
         create_file(&root, "file+plus.txt", b"plus");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 3);
         let names: Vec<&str> = tree.files.iter().map(|f| f.name.as_str()).collect();
@@ -1165,7 +1227,7 @@ mod edge_cases {
         create_file(&root, "binary.bin", &binary_content);
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.files[0].name, "binary.bin");
@@ -1187,7 +1249,7 @@ mod edge_cases {
         create_file(&root, &long_name, b"long name file");
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.files[0].name, long_name);
@@ -1215,7 +1277,7 @@ mod edge_cases {
         create_file(&root, "copy_3.txt", content);
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 3);
         // All file hashes should be identical (hash doesn't include file name)
@@ -1224,7 +1286,7 @@ mod edge_cases {
         // But the folder hash should still be deterministic
         let hash1 = tree.root_hash.clone();
 
-        let tree2 = scanner.scan().unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
         assert_eq!(hash1, tree2.root_hash);
     }
 }
@@ -1250,7 +1312,7 @@ mod symlink_handling {
         unix_fs::symlink(&target_path, root.join("link.txt")).unwrap();
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.files[0].name, "link.txt");
@@ -1273,7 +1335,7 @@ mod symlink_handling {
         unix_fs::symlink(&target_dir, root.join("linked_dir")).unwrap();
 
         let mut scanner = new_scanner(&root);
-        let tree = scanner.scan().unwrap();
+        let tree = scan_view(&mut scanner).unwrap();
 
         assert_eq!(tree.folders.len(), 1);
         assert_eq!(tree.folders[0].name, "linked_dir");
@@ -1315,13 +1377,13 @@ mod symlink_handling {
         unix_fs::symlink(&target_path, root.join("link.txt")).unwrap();
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
 
         // Modify the target file
         fs::write(&target_path, b"version 2").unwrap();
         set_file_mtime(&target_path, FileTime::from_unix_time(2_000_000_000, 0)).unwrap();
 
-        let tree2 = scanner.scan().unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         assert_ne!(tree1.root_hash, tree2.root_hash);
         assert_ne!(tree1.files[0].hash, tree2.files[0].hash);
@@ -1412,8 +1474,8 @@ mod cache_correctness {
         create_file(&root, "file.txt", b"content to cache");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
-        let tree2 = scanner.scan().unwrap(); // Should use cache
+        let tree1 = scan_view(&mut scanner).unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap(); // Should use cache
 
         assert_eq!(tree1.root_hash, tree2.root_hash);
         assert_eq!(tree1.files[0].hash, tree2.files[0].hash);
@@ -1438,7 +1500,7 @@ mod cache_correctness {
         create_file(&root, "file.txt", b"aaaaaaa");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
 
         // Overwrite with same-size but different content
         create_file(&root, "file.txt", b"bbbbbbb");
@@ -1448,7 +1510,7 @@ mod cache_correctness {
         )
         .unwrap();
 
-        let tree2 = scanner.scan().unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         assert_ne!(tree1.files[0].hash, tree2.files[0].hash);
         assert_ne!(tree1.root_hash, tree2.root_hash);
@@ -1464,7 +1526,7 @@ mod cache_correctness {
         create_file(&root, "sibling.txt", b"untouched");
 
         let mut scanner = new_scanner(&root);
-        let tree1 = scanner.scan().unwrap();
+        let tree1 = scan_view(&mut scanner).unwrap();
 
         // Modify nested file
         create_file(&sub, "nested.txt", b"modified");
@@ -1474,7 +1536,7 @@ mod cache_correctness {
         )
         .unwrap();
 
-        let tree2 = scanner.scan().unwrap();
+        let tree2 = scan_view(&mut scanner).unwrap();
 
         // Root hash changed because child changed
         assert_ne!(tree1.root_hash, tree2.root_hash);
