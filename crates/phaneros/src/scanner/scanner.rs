@@ -89,7 +89,7 @@ impl MetadataKey {
 enum SnapshotStatus {
     InProgress,
     Completed,
-    Failed(String),
+    Failed,
 }
 
 #[derive(Debug)]
@@ -234,10 +234,10 @@ impl Scanner {
         }
     }
 
-    fn fail_snapshot(&mut self, error: String) {
+    fn fail_snapshot(&mut self) {
         if let Some(mut snapshot) = self.current_snapshot.take() {
             snapshot.completed_at = Some(SystemTime::now());
-            snapshot.status = SnapshotStatus::Failed(error);
+            snapshot.status = SnapshotStatus::Failed;
             // Failed snapshots are not stored in the buffer
         }
     }
@@ -272,7 +272,7 @@ impl Scanner {
                     &ScannerEvent::Error(error_msg.clone()),
                     &self.file_path.display().to_string(),
                 );
-                self.fail_snapshot(error_msg);
+                self.fail_snapshot();
                 self.status = ScannerStatus::Idle;
                 return Err(e);
             }
