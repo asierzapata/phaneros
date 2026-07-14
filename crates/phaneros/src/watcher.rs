@@ -5,14 +5,14 @@ use std::{path::Path, time::Duration};
 use thiserror::Error;
 
 use crate::folder_tree::IndexTree;
-use crate::scanner::Scanner;
+use crate::scanner::scanner::Scanner;
 
 #[derive(Error, Debug)]
 pub enum WatcherError {
     #[error("Path watch error: {0}")]
     PathWachError(#[from] notify::Error),
     #[error("Scanner error: {0}")]
-    Scanner(#[from] crate::scanner::ScannerError),
+    Scanner(#[from] crate::scanner::scanner::ScannerError),
 }
 
 pub struct Watcher {

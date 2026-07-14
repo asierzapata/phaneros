@@ -1,16 +1,17 @@
 use rayon::prelude::*;
-use std::io::Read;
+use std::path::PathBuf;
 use std::{collections::HashMap, fs, sync::atomic::AtomicUsize};
 use thiserror::Error;
 
 use crate::folder_tree::{FileChunk, FileIndexTreeNode, FolderIndexTreeNode, IndexTree};
+use crate::scanner::file_chunker::{FileChunker, FileChunkerError};
+use crate::scanner::file_counter::FileCounter;
 use crate::utils::observer::Publisher;
 
 #[derive(Debug)]
 pub enum ScannerStatus {
-    Idle,          // The scanner is idle and not currently scanning
-    Scanning,      // The scanner is currently scanning the path
-    Error(String), // An error occurred during scanning, with an error message
+    Idle,     // The scanner is idle and not currently scanning
+    Scanning, // The scanner is currently scanning the path
 }
 
 /// Events that can be emitted by the scanner to notify observers of changes in its state or progress.
@@ -90,18 +91,65 @@ impl MetadataKey {
     }
 }
 
-/// What a single `read_dir` entry turned into, so that a parallel scan of a directory
-/// can be partitioned back into the two homogeneous lists a folder node is built from.
-enum ScannedEntry {
-    Folder(
-        FolderIndexTreeNode,
-        Vec<(String, MetadataKey, FileIndexTreeNode)>,
-    ),
-    File(FileIndexTreeNode, (String, MetadataKey, FileIndexTreeNode)),
+#[derive(Debug)]
+enum SnapshotStatus {
+    InProgress,
+    Completed,
+    Failed(String),
 }
 
-/// The name a node is known by inside its parent. Never the full path: a node's hash
-/// must describe its contents, not where the tree happens to be mounted.
+#[derive(Debug)]
+struct ScanSnapshot {
+    started_at: std::time::SystemTime,
+    completed_at: Option<std::time::SystemTime>,
+    status: SnapshotStatus,
+    file_count_estimate: usize,
+    scan_progress: AtomicUsize,
+    scanned_entries: HashMap<EntryKey, EntryRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EntryKey {
+    pub rel_path: PathBuf, // normalized path relative to root
+}
+
+#[derive(Debug)]
+pub enum EntryRecord {
+    Folder(FolderRecord),
+    File(FileRecord),
+}
+
+#[derive(Debug)]
+pub struct FolderRecord {
+    pub metadata_hash: String,
+}
+
+#[derive(Debug)]
+pub struct FileRecord {
+    pub metadata_hash: String,
+    pub content_hash: Option<String>,
+    pub chunks: Vec<ChunkRecord>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChunkRecord {
+    pub index: usize,
+    pub hash: String,
+    pub size: u64,
+}
+
+pub struct ScanStats {
+    pub files: u64,
+    pub folders: u64,
+    pub bytes_read: u64,
+}
+
+#[derive(Debug)]
+enum ScannedEntry {
+    Folder(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>),
+    File(FileIndexTreeNode, (EntryKey, EntryRecord)),
+}
+
 fn base_name(path: &str) -> String {
     std::path::Path::new(path)
         .file_name()
@@ -115,14 +163,11 @@ pub struct Scanner {
     file_path: String,     // The path to the file or directory being scanned
     status: ScannerStatus, // The current status of the scanner
     publisher: Publisher<ScannerEvent>, // The publisher for scanner events
-    file_count_estimate: usize, // An estimate of the number of files and directories in the path, used for progress reporting
-    scan_progress: AtomicUsize, // The number of files and directories scanned so far, used for progress reporting
-    last_scan_file_metadata_hash_map: HashMap<String, (MetadataKey, FileIndexTreeNode)>, // A map of file paths to their metadata keys and tree nodes from the last scan
-    last_scan_time: Option<std::time::SystemTime>, // The time of the last scan
-    last_scan_duration: Option<std::time::Duration>, // The duration of the last scan
-    should_show_progress: bool,                    // Whether to show progress during scanning
+    should_show_progress: bool, // Whether to show progress during scanning
     file_chunker: FileChunker, // The file chunker used for chunking files during scanning
     file_counter: FileCounter, // The file counter used for counting files in the path
+    snapshot_buffer_size: usize, // The maximum number of scan snapshots to keep in memory
+    scan_snapshots: Vec<ScanSnapshot>, // A list of the last scan snapshots, used for progress reporting and change detection
 }
 
 impl Scanner {
@@ -132,13 +177,10 @@ impl Scanner {
             should_show_progress,
             status: ScannerStatus::Idle,
             publisher: Publisher::default(),
-            file_count_estimate: 0,
-            scan_progress: AtomicUsize::new(0),
-            last_scan_file_metadata_hash_map: HashMap::new(),
-            last_scan_time: None,
-            last_scan_duration: None,
             file_chunker: FileChunker::new(1024 * 1024), // 1 MB chunk size
             file_counter: FileCounter::new(),
+            snapshot_buffer_size: 10, // Default snapshot buffer size
+            scan_snapshots: Vec::new(),
         }
     }
 
@@ -150,6 +192,18 @@ impl Scanner {
         &self.file_path
     }
 
+    fn entry_key(&self, path: &str) -> EntryKey {
+        let root_path = std::path::Path::new(&self.file_path);
+        let entry_path = std::path::Path::new(path);
+
+        let rel_path = entry_path
+            .strip_prefix(root_path)
+            .map(|rel| rel.to_path_buf())
+            .unwrap_or_else(|_| entry_path.to_path_buf());
+
+        EntryKey { rel_path }
+    }
+
     pub fn scan(&mut self) -> Result<IndexTree, ScannerError> {
         if let ScannerStatus::Scanning = self.status {
             // If the scanner is already scanning, return early
@@ -157,9 +211,18 @@ impl Scanner {
             return Err(ScannerError::AlreadyScanning);
         }
         self.status = ScannerStatus::Scanning;
-        self.last_scan_time = Some(std::time::SystemTime::now());
 
-        self.file_count_estimate = if self.last_scan_file_metadata_hash_map.is_empty() {
+        let is_first_scan = self.scan_snapshots.is_empty();
+        let mut new_snapshot = ScanSnapshot {
+            started_at: std::time::SystemTime::now(),
+            completed_at: None,
+            status: SnapshotStatus::InProgress,
+            file_count_estimate: 0,
+            scan_progress: AtomicUsize::new(0),
+            scanned_entries: HashMap::new(),
+        };
+
+        new_snapshot.file_count_estimate = if is_first_scan {
             match self.file_counter.count_files_in_path(&self.file_path) {
                 Ok(count) => count,
                 Err(e) => {
@@ -168,8 +231,7 @@ impl Scanner {
                         &ScannerEvent::Error(format!("Error counting files in path: {}", e)),
                         &self.file_path,
                     );
-                    self.status =
-                        ScannerStatus::Error(format!("Error counting files in path: {}", e));
+                    self.status = ScannerStatus::Idle;
                     return Err(ScannerError::CountFilesFailed(format!(
                         "Error counting files in path: {}",
                         e
@@ -177,7 +239,10 @@ impl Scanner {
                 }
             }
         } else {
-            self.last_scan_file_metadata_hash_map.len()
+            self.scan_snapshots
+                .last()
+                .map(|snapshot| snapshot.file_count_estimate)
+                .unwrap_or(0)
         };
 
         self.publisher
@@ -186,14 +251,8 @@ impl Scanner {
         let file_path = self.file_path.clone();
 
         let folder_tree = match self.scan_path(&file_path) {
-            Ok((index_node, metadata_keys)) => {
-                self.last_scan_file_metadata_hash_map.clear();
-                for (path, metadata_key, index_node) in metadata_keys {
-                    self.last_scan_file_metadata_hash_map
-                        .insert(path, (metadata_key, index_node));
-                }
-                // The root node's own name is deliberately dropped: a node's name belongs
-                // to its parent, and the root has no parent. Its hash is unaffected by it.
+            Ok((index_node, scanned_entries)) => {
+                new_snapshot.scanned_entries = scanned_entries;
                 IndexTree {
                     root_hash: index_node.hash,
                     folders: index_node.folders,
@@ -206,21 +265,36 @@ impl Scanner {
                     &ScannerEvent::Error(format!("Error scanning path: {}", e)),
                     &self.file_path,
                 );
-                self.status = ScannerStatus::Error(format!("Error scanning path: {}", e));
+                self.status = ScannerStatus::Idle;
                 return Err(e);
             }
         };
 
-        self.last_scan_duration = self.last_scan_time.and_then(|start| start.elapsed().ok());
+        new_snapshot.completed_at = Some(std::time::SystemTime::now());
+        new_snapshot.status = SnapshotStatus::Completed;
+        new_snapshot.scan_progress.store(
+            new_snapshot.scanned_entries.len(),
+            std::sync::atomic::Ordering::SeqCst,
+        );
         println!(
             "Scan completed for path {} in {}. Root hash: {}. Number of files and directories scanned: {}",
             self.file_path,
-            self.last_scan_duration.unwrap_or_default().as_secs_f64(),
+            new_snapshot
+                .completed_at
+                .unwrap()
+                .duration_since(new_snapshot.started_at)
+                .unwrap_or_default()
+                .as_secs(),
             folder_tree.root_hash,
-            self.last_scan_file_metadata_hash_map.len()
+            new_snapshot.scanned_entries.len()
         );
         self.publisher
             .notify(&ScannerEvent::ScanCompleted, &self.file_path);
+
+        self.scan_snapshots.push(new_snapshot);
+        if self.scan_snapshots.len() > self.snapshot_buffer_size {
+            self.scan_snapshots.remove(0);
+        }
 
         self.status = ScannerStatus::Idle;
 
@@ -230,13 +304,7 @@ impl Scanner {
     fn scan_path(
         &self,
         path: &str,
-    ) -> Result<
-        (
-            FolderIndexTreeNode,
-            Vec<(String, MetadataKey, FileIndexTreeNode)>,
-        ),
-        ScannerError,
-    > {
+    ) -> Result<(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>), ScannerError> {
         // We use fs::metadata to do a performant scan of the path, without reading
         // the entire contents into memory. We will only read files, and just to compute
         // their hashes if they have changed since the last scan based on their metadata.
@@ -255,33 +323,30 @@ impl Scanner {
             self.scan_directory(path)
         } else if metadata.is_file() {
             self.scan_file(path, &metadata)
-                .map(|(index_node, metadata_key)| {
+                .map(|(index_node, scanned_entry)| {
+                    let mut scanned_entries = HashMap::new();
+                    scanned_entries.insert(scanned_entry.0, scanned_entry.1);
+
                     (
                         FolderIndexTreeNode::new(base_name(path), vec![], vec![index_node]),
-                        vec![metadata_key],
+                        scanned_entries,
                     )
                 })
         } else {
-            return Err(ScannerError::GetMetadataFailed {
+            Err(ScannerError::GetMetadataFailed {
                 path: path.to_string(),
                 source: std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "Path is neither a file nor a directory",
                 ),
-            });
+            })
         }
     }
 
     fn scan_directory(
         &self,
         path: &str,
-    ) -> Result<
-        (
-            FolderIndexTreeNode,
-            Vec<(String, MetadataKey, FileIndexTreeNode)>,
-        ),
-        ScannerError,
-    > {
+    ) -> Result<(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>), ScannerError> {
         let read_dir = match fs::read_dir(path) {
             Ok(entries) => entries,
             Err(e) => {
@@ -292,12 +357,13 @@ impl Scanner {
             }
         };
 
-        let entries = read_dir
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| ScannerError::ReadDirFailed {
-                path: path.to_string(),
-                source: e,
-            })?;
+        let entries =
+            read_dir
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| ScannerError::ReadDirFailed {
+                    path: path.to_string(),
+                    source: e,
+                })?;
 
         let scanned_entries = entries
             .par_iter()
@@ -314,11 +380,11 @@ impl Scanner {
                     })?;
 
                 if metadata.is_dir() {
-                    let (index_node, metadata_keys) = self.scan_directory(&entry_path_str)?;
-                    Ok(ScannedEntry::Folder(index_node, metadata_keys))
+                    let (index_node, child_entries) = self.scan_directory(&entry_path_str)?;
+                    Ok(ScannedEntry::Folder(index_node, child_entries))
                 } else if metadata.is_file() {
-                    let (index_node, metadata_key) = self.scan_file(&entry_path_str, &metadata)?;
-                    Ok(ScannedEntry::File(index_node, metadata_key))
+                    let (index_node, scanned_entry) = self.scan_file(&entry_path_str, &metadata)?;
+                    Ok(ScannedEntry::File(index_node, scanned_entry))
                 } else {
                     Err(ScannerError::GetMetadataFailed {
                         path: entry_path_str.clone(),
@@ -333,37 +399,45 @@ impl Scanner {
 
         let mut folder_index_nodes = Vec::new();
         let mut file_index_nodes = Vec::new();
-        let mut metadata_keys = Vec::new();
+        let mut scanned_entry_map: HashMap<EntryKey, EntryRecord> = HashMap::new();
 
         for scanned_entry in scanned_entries {
             match scanned_entry {
-                ScannedEntry::Folder(index_node, entry_metadata_keys) => {
+                ScannedEntry::Folder(index_node, child_entries) => {
                     folder_index_nodes.push(index_node);
-                    metadata_keys.extend(entry_metadata_keys);
+                    scanned_entry_map.extend(child_entries);
                 }
-                ScannedEntry::File(index_node, metadata_key) => {
+                ScannedEntry::File(index_node, (entry_key, entry_record)) => {
                     file_index_nodes.push(index_node);
-                    metadata_keys.push(metadata_key);
+                    scanned_entry_map.insert(entry_key, entry_record);
                 }
             }
         }
 
-        // read_dir yields entries in an arbitrary order, so both lists have to be
-        // sorted for the folder hash to be stable across scans and across machines.
         folder_index_nodes.sort_by(|a, b| a.name.cmp(&b.name));
         file_index_nodes.sort_by(|a, b| a.name.cmp(&b.name));
 
-        Ok((
-            FolderIndexTreeNode::from_children(base_name(path), folder_index_nodes, file_index_nodes),
-            metadata_keys,
-        ))
+        let folder_index_node = FolderIndexTreeNode::from_children(
+            base_name(path),
+            folder_index_nodes,
+            file_index_nodes,
+        );
+
+        scanned_entry_map.insert(
+            self.entry_key(path),
+            EntryRecord::Folder(FolderRecord {
+                metadata_hash: folder_index_node.hash.clone(),
+            }),
+        );
+
+        Ok((folder_index_node, scanned_entry_map))
     }
 
     fn scan_file(
         &self,
         path: &str,
         metadata: &fs::Metadata,
-    ) -> Result<(FileIndexTreeNode, (String, MetadataKey, FileIndexTreeNode)), ScannerError> {
+    ) -> Result<(FileIndexTreeNode, (EntryKey, EntryRecord)), ScannerError> {
         let file_size = metadata.len();
 
         let last_time_modified = match metadata.modified() {
@@ -377,50 +451,64 @@ impl Scanner {
         };
 
         let metadata_key = MetadataKey::new(file_size, last_time_modified);
+        let entry_key = self.entry_key(path);
 
-        let last_scan_entry = self.last_scan_file_metadata_hash_map.get(path);
+        let last_scan_entry = self
+            .scan_snapshots
+            .last()
+            .and_then(|snapshot| snapshot.scanned_entries.get(&entry_key));
 
-        let scan_response = match last_scan_entry {
-            Some((last_metadata_key, metadata_key_index_node)) => {
-                if *last_metadata_key == metadata_key {
-                    (
-                        metadata_key_index_node.clone(),
-                        (
-                            path.to_string(),
-                            metadata_key.clone(),
-                            metadata_key_index_node.clone(),
-                        ),
-                    )
-                } else {
-                    let file_chunks = self.file_chunker.chunk_file(path)?;
-                    let index_node =
-                        FileIndexTreeNode::from_chunks(base_name(path), file_chunks);
+        let file_name = base_name(path);
 
-                    (
-                        index_node.clone(),
-                        (path.to_string(), metadata_key.clone(), index_node),
-                    )
+        let index_node = match last_scan_entry {
+            Some(EntryRecord::File(last_file_record))
+                if last_file_record.metadata_hash == metadata_key.0 =>
+            {
+                let mut sorted_chunks = last_file_record.chunks.clone();
+                sorted_chunks.sort_by_key(|chunk| chunk.index);
+
+                let chunks: Vec<FileChunk> = sorted_chunks
+                    .into_iter()
+                    .map(|chunk| FileChunk {
+                        hash: chunk.hash,
+                        size: chunk.size,
+                    })
+                    .collect();
+
+                let hash = last_file_record.content_hash.clone().unwrap_or_else(|| {
+                    FileIndexTreeNode::from_chunks(file_name.clone(), chunks.clone()).hash
+                });
+
+                FileIndexTreeNode {
+                    name: file_name.clone(),
+                    hash,
+                    chunks,
                 }
             }
-            None => {
+            _ => {
                 let file_chunks = self.file_chunker.chunk_file(path)?;
-                let file_name = match std::path::Path::new(path).file_name() {
-                    Some(name) => name.to_string_lossy().to_string(),
-                    None => path.to_string(),
-                };
-
-                let index_node = FileIndexTreeNode::from_chunks(file_name, file_chunks);
-
-                (
-                    index_node.clone(),
-                    (path.to_string(), metadata_key.clone(), index_node),
-                )
+                FileIndexTreeNode::from_chunks(file_name.clone(), file_chunks)
             }
         };
 
+        let entry_record = EntryRecord::File(FileRecord {
+            metadata_hash: metadata_key.0,
+            content_hash: Some(index_node.hash.clone()),
+            chunks: index_node
+                .chunks
+                .iter()
+                .enumerate()
+                .map(|(index, chunk)| ChunkRecord {
+                    index,
+                    hash: chunk.hash.clone(),
+                    size: chunk.size,
+                })
+                .collect(),
+        });
+
         self.notify_progress(path);
 
-        Ok(scan_response)
+        Ok((index_node, (entry_key, entry_record)))
     }
 
     fn notify_progress(&self, _path: &str) {
@@ -429,129 +517,20 @@ impl Scanner {
         }
 
         let progress = self
-            .scan_progress
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-            + 1;
-        let total = self.file_count_estimate;
+            .scan_snapshots
+            .last()
+            .map(|snapshot| {
+                snapshot
+                    .scan_progress
+                    .load(std::sync::atomic::Ordering::SeqCst)
+            })
+            .unwrap_or(0);
+        let total = self
+            .scan_snapshots
+            .last()
+            .map(|snapshot| snapshot.file_count_estimate)
+            .unwrap_or(0);
 
         println!("Scanned {} of {} files and directories. ", progress, total,);
-    }
-}
-
-#[derive(Error, Debug)]
-enum FileCounterError {
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
-}
-
-#[derive(Debug)]
-struct FileCounter {
-    count: AtomicUsize,
-}
-
-impl FileCounter {
-    fn new() -> Self {
-        FileCounter {
-            count: AtomicUsize::new(0),
-        }
-    }
-
-    fn increment(&self) {
-        self.count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn get_count(&self) -> usize {
-        self.count.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    pub fn count_files_in_path(&self, path: &str) -> Result<usize, FileCounterError> {
-        let metadata = match fs::metadata(path) {
-            Ok(metadata) => metadata,
-            Err(e) => {
-                return Err(FileCounterError::IoError(e));
-            }
-        };
-
-        if metadata.is_dir() {
-            let entries = match fs::read_dir(path) {
-                Ok(entries) => entries,
-                Err(e) => {
-                    return Err(FileCounterError::IoError(e));
-                }
-            };
-
-            for entry in entries {
-                let entry = entry.map_err(FileCounterError::IoError)?;
-                let entry_path = entry.path();
-                let entry_path_str = entry_path.to_string_lossy().to_string();
-                self.count_files_in_path(&entry_path_str)?;
-            }
-        } else if metadata.is_file() {
-            self.increment();
-        }
-
-        Ok(self.get_count())
-    }
-}
-
-#[derive(Error, Debug)]
-enum FileChunkerError {
-    #[error("Error reading file: {path}")]
-    ReadFileFailed {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
-}
-
-#[derive(Debug)]
-struct FileChunker {
-    chunk_size: usize,
-}
-
-impl FileChunker {
-    fn new(chunk_size: usize) -> Self {
-        FileChunker { chunk_size }
-    }
-
-    fn chunk_file(&self, path: &str) -> Result<Vec<FileChunk>, FileChunkerError> {
-        let file = match fs::File::open(path) {
-            Ok(file) => file,
-            Err(e) => {
-                println!("Error opening file {}: {}", path, e);
-                return Err(FileChunkerError::ReadFileFailed {
-                    path: path.to_string(),
-                    source: e,
-                });
-            }
-        };
-
-        let mut reader = std::io::BufReader::new(file);
-        let mut buffer = vec![0; self.chunk_size];
-        let mut chunks = Vec::new();
-
-        loop {
-            let bytes_read = match reader.read(&mut buffer) {
-                Ok(0) => break, // EOF
-                Ok(n) => n,
-                Err(e) => {
-                    println!("Error reading file {}: {}", path, e);
-                    return Err(FileChunkerError::ReadFileFailed {
-                        path: path.to_string(),
-                        source: e,
-                    });
-                }
-            };
-
-            chunks.push(buffer[..bytes_read].to_vec());
-        }
-
-        let chunk_index_nodes = chunks
-            .into_iter()
-            .enumerate()
-            .map(|(_, bytes)| FileChunk::from_bytes(&bytes))
-            .collect();
-
-        Ok(chunk_index_nodes)
     }
 }
