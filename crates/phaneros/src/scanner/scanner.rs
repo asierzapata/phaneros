@@ -1,34 +1,28 @@
 use rayon::prelude::*;
-use std::path::PathBuf;
-use std::{collections::HashMap, fs, sync::atomic::AtomicUsize};
+use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicUsize;
+use std::{fs, time::SystemTime};
 use thiserror::Error;
 
 use crate::folder_tree::{FileChunk, FileIndexTreeNode, FolderIndexTreeNode, IndexTree};
 use crate::scanner::file_chunker::{FileChunker, FileChunkerError};
-use crate::scanner::file_counter::FileCounter;
 use crate::utils::observer::Publisher;
 
 #[derive(Debug)]
 pub enum ScannerStatus {
-    Idle,     // The scanner is idle and not currently scanning
-    Scanning, // The scanner is currently scanning the path
+    Idle,
+    Scanning,
 }
 
 /// Events that can be emitted by the scanner to notify observers of changes in its state or progress.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScannerEvent {
-    ScanStarted,   // The scanner has started scanning the path
-    ScanCompleted, // The scanner has completed scanning the path
-
-    SyncStarted, // The scanner has started syncing the local representation with the remote representation
-    SyncCompleted, // The scanner has completed syncing the local representation with the remote representation
-    Error(String), // An error occurred during scanning or syncing, with an error message
-}
-
-impl Default for ScannerEvent {
-    fn default() -> Self {
-        ScannerEvent::ScanStarted
-    }
+    ScanStarted,
+    ScanCompleted,
+    SyncStarted,
+    SyncCompleted,
+    Error(String),
 }
 
 #[derive(Error, Debug)]
@@ -71,9 +65,6 @@ pub enum ScannerError {
     #[error("Scanner is already scanning")]
     AlreadyScanning,
 
-    #[error("Scanner failed to count files in path: {0}")]
-    CountFilesFailed(String),
-
     #[error("Chunking file failed: {0}")]
     ChunkingFileFailed(#[from] FileChunkerError),
 }
@@ -82,11 +73,14 @@ pub enum ScannerError {
 struct MetadataKey(String);
 
 impl MetadataKey {
-    fn new(size: u64, last_modified: std::time::SystemTime) -> Self {
-        let last_modified_timestamp = last_modified
-            .duration_since(std::time::UNIX_EPOCH)
+    fn new(metadata: &fs::Metadata) -> Self {
+        let size = metadata.len();
+        let last_modified_timestamp = metadata
+            .modified()
+            .unwrap_or(SystemTime::UNIX_EPOCH)
+            .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
+            .as_nanos();
         MetadataKey(format!("{}-{}", size, last_modified_timestamp))
     }
 }
@@ -100,8 +94,8 @@ enum SnapshotStatus {
 
 #[derive(Debug)]
 struct ScanSnapshot {
-    started_at: std::time::SystemTime,
-    completed_at: Option<std::time::SystemTime>,
+    started_at: SystemTime,
+    completed_at: Option<SystemTime>,
     status: SnapshotStatus,
     file_count_estimate: usize,
     scan_progress: AtomicUsize,
@@ -110,7 +104,7 @@ struct ScanSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EntryKey {
-    pub rel_path: PathBuf, // normalized path relative to root
+    pub rel_path: PathBuf,
 }
 
 #[derive(Debug)]
@@ -138,49 +132,43 @@ pub struct ChunkRecord {
     pub size: u64,
 }
 
-pub struct ScanStats {
-    pub files: u64,
-    pub folders: u64,
-    pub bytes_read: u64,
-}
-
 #[derive(Debug)]
 enum ScannedEntry {
     Folder(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>),
     File(FileIndexTreeNode, (EntryKey, EntryRecord)),
 }
 
-fn base_name(path: &str) -> String {
-    std::path::Path::new(path)
-        .file_name()
+fn base_name(path: &Path) -> String {
+    path.file_name()
         .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string())
+        .unwrap_or_else(|| path.display().to_string())
 }
 
-/// Scanner is reponsible for maintaning a local representation of a given path and its contents for efficient change detection and reconciliation with a remote representation of the same path and its contents.
+/// Scanner is responsible for maintaining a local representation of a given path and its contents
+/// for efficient change detection and reconciliation with a remote representation.
 #[derive(Debug)]
 pub struct Scanner {
-    file_path: String,     // The path to the file or directory being scanned
-    status: ScannerStatus, // The current status of the scanner
-    publisher: Publisher<ScannerEvent>, // The publisher for scanner events
-    should_show_progress: bool, // Whether to show progress during scanning
-    file_chunker: FileChunker, // The file chunker used for chunking files during scanning
-    file_counter: FileCounter, // The file counter used for counting files in the path
-    snapshot_buffer_size: usize, // The maximum number of scan snapshots to keep in memory
-    scan_snapshots: Vec<ScanSnapshot>, // A list of the last scan snapshots, used for progress reporting and change detection
+    file_path: PathBuf,
+    status: ScannerStatus,
+    publisher: Publisher<ScannerEvent>,
+    should_show_progress: bool,
+    file_chunker: FileChunker,
+    snapshot_buffer_size: usize,
+    current_snapshot: Option<ScanSnapshot>,
+    scan_snapshots: VecDeque<ScanSnapshot>,
 }
 
 impl Scanner {
-    pub fn new(file_path: String, should_show_progress: bool) -> Scanner {
+    pub fn new(file_path: impl Into<PathBuf>, should_show_progress: bool) -> Scanner {
         Scanner {
-            file_path,
+            file_path: file_path.into(),
             should_show_progress,
             status: ScannerStatus::Idle,
-            publisher: Publisher::default(),
+            publisher: Publisher::new(),
             file_chunker: FileChunker::new(1024 * 1024), // 1 MB chunk size
-            file_counter: FileCounter::new(),
-            snapshot_buffer_size: 10, // Default snapshot buffer size
-            scan_snapshots: Vec::new(),
+            snapshot_buffer_size: 10,
+            current_snapshot: None,
+            scan_snapshots: VecDeque::new(),
         }
     }
 
@@ -188,113 +176,112 @@ impl Scanner {
         &mut self.publisher
     }
 
-    pub fn get_path(&self) -> &str {
+    pub fn get_path(&self) -> &Path {
         &self.file_path
     }
 
-    fn entry_key(&self, path: &str) -> EntryKey {
-        let root_path = std::path::Path::new(&self.file_path);
-        let entry_path = std::path::Path::new(path);
-
-        let rel_path = entry_path
-            .strip_prefix(root_path)
+    fn entry_key(&self, path: &Path) -> EntryKey {
+        let rel_path = path
+            .strip_prefix(&self.file_path)
             .map(|rel| rel.to_path_buf())
-            .unwrap_or_else(|_| entry_path.to_path_buf());
+            .unwrap_or_else(|_| path.to_path_buf());
 
         EntryKey { rel_path }
     }
 
+    fn create_snapshot(&mut self) {
+        let file_count_estimate = self
+            .scan_snapshots
+            .back()
+            .map(|snapshot| snapshot.scanned_entries.len())
+            .unwrap_or(0);
+
+        self.current_snapshot = Some(ScanSnapshot {
+            started_at: SystemTime::now(),
+            completed_at: None,
+            status: SnapshotStatus::InProgress,
+            file_count_estimate,
+            scan_progress: AtomicUsize::new(0),
+            scanned_entries: HashMap::new(),
+        });
+    }
+
+    fn complete_snapshot(&mut self, scanned_entries: HashMap<EntryKey, EntryRecord>) {
+        if let Some(mut snapshot) = self.current_snapshot.take() {
+            snapshot.completed_at = Some(SystemTime::now());
+            snapshot.status = SnapshotStatus::Completed;
+            snapshot
+                .scan_progress
+                .store(scanned_entries.len(), std::sync::atomic::Ordering::SeqCst);
+            snapshot.scanned_entries = scanned_entries;
+
+            println!(
+                "Scan completed for path {} in {}s. Number of entries scanned: {}",
+                self.file_path.display(),
+                snapshot
+                    .completed_at
+                    .unwrap()
+                    .duration_since(snapshot.started_at)
+                    .unwrap_or_default()
+                    .as_secs(),
+                snapshot.scanned_entries.len()
+            );
+
+            self.scan_snapshots.push_back(snapshot);
+            if self.scan_snapshots.len() > self.snapshot_buffer_size {
+                self.scan_snapshots.pop_front();
+            }
+        }
+    }
+
+    fn fail_snapshot(&mut self, error: String) {
+        if let Some(mut snapshot) = self.current_snapshot.take() {
+            snapshot.completed_at = Some(SystemTime::now());
+            snapshot.status = SnapshotStatus::Failed(error);
+            // Failed snapshots are not stored in the buffer
+        }
+    }
+
     pub fn scan(&mut self) -> Result<IndexTree, ScannerError> {
         if let ScannerStatus::Scanning = self.status {
-            // If the scanner is already scanning, return early
-            // TODO: Consider returning an error that a scan is already in progress
             return Err(ScannerError::AlreadyScanning);
         }
         self.status = ScannerStatus::Scanning;
+        self.create_snapshot();
 
-        let is_first_scan = self.scan_snapshots.is_empty();
-        let mut new_snapshot = ScanSnapshot {
-            started_at: std::time::SystemTime::now(),
-            completed_at: None,
-            status: SnapshotStatus::InProgress,
-            file_count_estimate: 0,
-            scan_progress: AtomicUsize::new(0),
-            scanned_entries: HashMap::new(),
-        };
-
-        new_snapshot.file_count_estimate = if is_first_scan {
-            match self.file_counter.count_files_in_path(&self.file_path) {
-                Ok(count) => count,
-                Err(e) => {
-                    println!("Error counting files in path {}: {}", self.file_path, e);
-                    self.publisher.notify(
-                        &ScannerEvent::Error(format!("Error counting files in path: {}", e)),
-                        &self.file_path,
-                    );
-                    self.status = ScannerStatus::Idle;
-                    return Err(ScannerError::CountFilesFailed(format!(
-                        "Error counting files in path: {}",
-                        e
-                    )));
-                }
-            }
-        } else {
-            self.scan_snapshots
-                .last()
-                .map(|snapshot| snapshot.file_count_estimate)
-                .unwrap_or(0)
-        };
-
-        self.publisher
-            .notify(&ScannerEvent::ScanStarted, &self.file_path);
+        self.publisher.notify(
+            &ScannerEvent::ScanStarted,
+            &self.file_path.display().to_string(),
+        );
 
         let file_path = self.file_path.clone();
 
         let folder_tree = match self.scan_path(&file_path) {
             Ok((index_node, scanned_entries)) => {
-                new_snapshot.scanned_entries = scanned_entries;
-                IndexTree {
+                let tree = IndexTree {
                     root_hash: index_node.hash,
                     folders: index_node.folders,
                     files: index_node.files,
-                }
+                };
+                self.complete_snapshot(scanned_entries);
+                tree
             }
             Err(e) => {
-                println!("Error scanning path {}: {}", self.file_path, e);
+                let error_msg = format!("Error scanning path: {}", e);
                 self.publisher.notify(
-                    &ScannerEvent::Error(format!("Error scanning path: {}", e)),
-                    &self.file_path,
+                    &ScannerEvent::Error(error_msg.clone()),
+                    &self.file_path.display().to_string(),
                 );
+                self.fail_snapshot(error_msg);
                 self.status = ScannerStatus::Idle;
                 return Err(e);
             }
         };
 
-        new_snapshot.completed_at = Some(std::time::SystemTime::now());
-        new_snapshot.status = SnapshotStatus::Completed;
-        new_snapshot.scan_progress.store(
-            new_snapshot.scanned_entries.len(),
-            std::sync::atomic::Ordering::SeqCst,
+        self.publisher.notify(
+            &ScannerEvent::ScanCompleted,
+            &self.file_path.display().to_string(),
         );
-        println!(
-            "Scan completed for path {} in {}. Root hash: {}. Number of files and directories scanned: {}",
-            self.file_path,
-            new_snapshot
-                .completed_at
-                .unwrap()
-                .duration_since(new_snapshot.started_at)
-                .unwrap_or_default()
-                .as_secs(),
-            folder_tree.root_hash,
-            new_snapshot.scanned_entries.len()
-        );
-        self.publisher
-            .notify(&ScannerEvent::ScanCompleted, &self.file_path);
-
-        self.scan_snapshots.push(new_snapshot);
-        if self.scan_snapshots.len() > self.snapshot_buffer_size {
-            self.scan_snapshots.remove(0);
-        }
 
         self.status = ScannerStatus::Idle;
 
@@ -303,21 +290,12 @@ impl Scanner {
 
     fn scan_path(
         &self,
-        path: &str,
+        path: &Path,
     ) -> Result<(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>), ScannerError> {
-        // We use fs::metadata to do a performant scan of the path, without reading
-        // the entire contents into memory. We will only read files, and just to compute
-        // their hashes if they have changed since the last scan based on their metadata.
-
-        let metadata = match fs::metadata(path) {
-            Ok(metadata) => metadata,
-            Err(e) => {
-                return Err(ScannerError::GetMetadataFailed {
-                    path: path.to_string(),
-                    source: e,
-                });
-            }
-        };
+        let metadata = fs::metadata(path).map_err(|e| ScannerError::GetMetadataFailed {
+            path: path.display().to_string(),
+            source: e,
+        })?;
 
         if metadata.is_dir() {
             self.scan_directory(path)
@@ -334,34 +312,28 @@ impl Scanner {
                 })
         } else {
             Err(ScannerError::GetMetadataFailed {
-                path: path.to_string(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Path is neither a file nor a directory",
-                ),
+                path: path.display().to_string(),
+                source: std::io::Error::other("Path is neither a file nor a directory"),
             })
         }
     }
 
     fn scan_directory(
         &self,
-        path: &str,
+        path: &Path,
     ) -> Result<(FolderIndexTreeNode, HashMap<EntryKey, EntryRecord>), ScannerError> {
-        let read_dir = match fs::read_dir(path) {
-            Ok(entries) => entries,
-            Err(e) => {
-                return Err(ScannerError::ReadDirFailed {
-                    path: path.to_string(),
-                    source: e,
-                });
-            }
-        };
+        // TODO: Integrate the `ignore` crate to respect .gitignore rules and skip
+        // directories like .git/, node_modules/, target/
+        let read_dir = fs::read_dir(path).map_err(|e| ScannerError::ReadDirFailed {
+            path: path.display().to_string(),
+            source: e,
+        })?;
 
         let entries =
             read_dir
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|e| ScannerError::ReadDirFailed {
-                    path: path.to_string(),
+                    path: path.display().to_string(),
                     source: e,
                 })?;
 
@@ -369,29 +341,25 @@ impl Scanner {
             .par_iter()
             .map(|entry| {
                 let entry_path = entry.path();
-                let entry_path_str = entry_path.to_string_lossy().to_string();
 
-                // fs::metadata resolves symlinks, so a symlink to a file is scanned as
-                // the file it points at.
+                // NOTE: fs::metadata follows symlinks. Symlink cycles could cause infinite
+                // recursion. We should consider tracking visited inodes or limiting depth.
                 let metadata =
-                    fs::metadata(&entry_path_str).map_err(|e| ScannerError::GetMetadataFailed {
-                        path: entry_path_str.clone(),
+                    fs::metadata(&entry_path).map_err(|e| ScannerError::GetMetadataFailed {
+                        path: entry_path.display().to_string(),
                         source: e,
                     })?;
 
                 if metadata.is_dir() {
-                    let (index_node, child_entries) = self.scan_directory(&entry_path_str)?;
+                    let (index_node, child_entries) = self.scan_directory(&entry_path)?;
                     Ok(ScannedEntry::Folder(index_node, child_entries))
                 } else if metadata.is_file() {
-                    let (index_node, scanned_entry) = self.scan_file(&entry_path_str, &metadata)?;
+                    let (index_node, scanned_entry) = self.scan_file(&entry_path, &metadata)?;
                     Ok(ScannedEntry::File(index_node, scanned_entry))
                 } else {
                     Err(ScannerError::GetMetadataFailed {
-                        path: entry_path_str.clone(),
-                        source: std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Path is neither a file nor a directory",
-                        ),
+                        path: entry_path.display().to_string(),
+                        source: std::io::Error::other("Path is neither a file nor a directory"),
                     })
                 }
             })
@@ -435,27 +403,15 @@ impl Scanner {
 
     fn scan_file(
         &self,
-        path: &str,
+        path: &Path,
         metadata: &fs::Metadata,
     ) -> Result<(FileIndexTreeNode, (EntryKey, EntryRecord)), ScannerError> {
-        let file_size = metadata.len();
-
-        let last_time_modified = match metadata.modified() {
-            Ok(time) => time,
-            Err(e) => {
-                return Err(ScannerError::GetMetadataFailed {
-                    path: path.to_string(),
-                    source: e,
-                });
-            }
-        };
-
-        let metadata_key = MetadataKey::new(file_size, last_time_modified);
+        let metadata_key = MetadataKey::new(metadata);
         let entry_key = self.entry_key(path);
 
         let last_scan_entry = self
             .scan_snapshots
-            .last()
+            .back()
             .and_then(|snapshot| snapshot.scanned_entries.get(&entry_key));
 
         let file_name = base_name(path);
@@ -506,31 +462,30 @@ impl Scanner {
                 .collect(),
         });
 
-        self.notify_progress(path);
+        self.notify_progress();
 
         Ok((index_node, (entry_key, entry_record)))
     }
 
-    fn notify_progress(&self, _path: &str) {
+    fn notify_progress(&self) {
         if !self.should_show_progress {
             return;
         }
 
-        let progress = self
-            .scan_snapshots
-            .last()
-            .map(|snapshot| {
+        let (progress, total) = match &self.current_snapshot {
+            Some(snapshot) => (
                 snapshot
                     .scan_progress
-                    .load(std::sync::atomic::Ordering::SeqCst)
-            })
-            .unwrap_or(0);
-        let total = self
-            .scan_snapshots
-            .last()
-            .map(|snapshot| snapshot.file_count_estimate)
-            .unwrap_or(0);
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                snapshot.file_count_estimate,
+            ),
+            None => (0, 0),
+        };
 
-        println!("Scanned {} of {} files and directories. ", progress, total,);
+        println!(
+            "Scanned {} of ~{} files and directories.",
+            progress + 1,
+            total
+        );
     }
 }

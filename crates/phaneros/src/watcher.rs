@@ -1,7 +1,7 @@
 use notify::RecursiveMode;
 use notify_debouncer_full::new_debouncer;
 use std::sync::mpsc::{Receiver, channel};
-use std::{path::Path, time::Duration};
+use std::time::Duration;
 use thiserror::Error;
 
 use crate::folder_tree::IndexTree;
@@ -31,13 +31,12 @@ impl Watcher {
 
         let mut debouncer = new_debouncer(Duration::from_secs(5), None, notify_tx)?;
 
-        let scanner_path = self.scanner.get_path();
-        let path = Path::new(&scanner_path);
+        let path = self.scanner.get_path().to_path_buf();
         let debounce_watch_result = debouncer.watch(&path, RecursiveMode::Recursive);
 
         if let Err(error) = debounce_watch_result {
             println!("Error watching path: {:?}", error);
-            return Err(WatcherError::PathWachError(error).into());
+            return Err(WatcherError::PathWachError(error));
         }
 
         // We do a first scan to return alongside the watcher receiver, so the caller can have an initial state of the folder tree.
@@ -46,7 +45,7 @@ impl Watcher {
             Ok(folder_tree) => folder_tree,
             Err(error) => {
                 println!("Error scanning path: {:?}", error);
-                return Err(WatcherError::Scanner(error).into());
+                return Err(WatcherError::Scanner(error));
             }
         };
 
