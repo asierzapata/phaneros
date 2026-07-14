@@ -27,6 +27,13 @@ impl FolderIndexTreeNode {
         folders: Vec<FolderIndexTreeNode>,
         files: Vec<FileIndexTreeNode>,
     ) -> Self {
+        let mut folders = folders;
+        let mut files = files;
+
+        // Sort the folders and files by name to ensure consistent hashing
+        folders.sort_by(|a, b| a.name.cmp(&b.name));
+        files.sort_by(|a, b| a.name.cmp(&b.name));
+
         let mut hasher = blake3::Hasher::new();
 
         // We add a first byte to the hash to differentiate between files and folders
