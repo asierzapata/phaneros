@@ -1,5 +1,4 @@
-use crate::node_store::node::{Entry, FileChunk, Hash, Node};
-use crate::node_store::store::{InMemoryNodeStore, NodeStore};
+use crate::node_store::{Entry, FileChunk, Hash, InMemoryNodeStore, Node, NodeStore};
 
 #[cfg(test)]
 mod tests {
