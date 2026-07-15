@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock},
+};
 
 use crate::node_store::{Hash, HttpNodeStore, InMemoryNodeStore, NodeStore, WritableNodeStore};
 
@@ -9,32 +12,73 @@ pub fn compute_diff(
     source: &impl NodeStore,
     target: &impl NodeStore,
     root_hash: &Hash,
-) -> Vec<Hash> {
-    // TODO: walk `source` from `root_hash`, prune subtrees whose hash
-    // `target` already has, collect each missing node's hash exactly once.
+) -> HashSet<Hash> {
+    let mut transfer_set = HashSet::new();
 
-    let _ = (source, target, root_hash);
-
-    let mut transfer_set = Vec::new();
-
-    source.get_node(root_hash).map(|node| match node {
-        crate::node_store::Node::Folder { folders, files } => {
-            for folder_entry in folders {
-                let folder_hash = &folder_entry.hash;
-                if target.get_node(folder_hash).is_none() {
-                    transfer_set.push(folder_hash.clone());
-                    transfer_set.extend(compute_diff(source, target, folder_hash));
-                }
+    if let Some(node) = source.get_node(root_hash) {
+        match node {
+            crate::node_store::Node::Folder {
+                folders: _,
+                files: _,
+            } => {
+                compute_folder_diff(source, target, root_hash, &mut transfer_set);
             }
-            for file_hash in files {
-                if target.get_node(file_hash).is_none() {
-                    transfer_set.push(file_hash.clone());
-                }
+            crate::node_store::Node::File { chunks: _ } => {
+                compute_file_diff(source, target, root_hash, &mut transfer_set);
             }
         }
-    });
+    }
 
     transfer_set
+}
+
+fn compute_folder_diff(
+    source: &impl NodeStore,
+    target: &impl NodeStore,
+    root_hash: &Hash,
+    transfer_set: &mut HashSet<Hash>,
+) {
+    if let Some(node) = source.get_node(root_hash) {
+        match node {
+            crate::node_store::Node::Folder { folders, files } => {
+                // We have to both check if the folder is not on the target node store
+                // and neither has been visited to only transfer it once.
+                // If we don't check the transfer set, we will transfer the same folder multiple times
+                // if it is referenced by multiple folders.
+                if target.get_node(root_hash).is_none() && transfer_set.insert(root_hash.clone()) {
+                    for folder in folders {
+                        compute_folder_diff(source, target, &folder.hash, transfer_set);
+                    }
+                    for file in files {
+                        compute_file_diff(source, target, &file.hash, transfer_set);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn compute_file_diff(
+    source: &impl NodeStore,
+    target: &impl NodeStore,
+    root_hash: &Hash,
+    transfer_set: &mut HashSet<Hash>,
+) {
+    if let Some(node) = source.get_node(root_hash) {
+        match node {
+            crate::node_store::Node::File { chunks: _ } => {
+                // We have to both check if the file is not on the target node store
+                // and neither has been visited to only transfer it once.
+                // If we don't check the transfer set, we will transfer the same file multiple times
+                // if it is referenced by multiple folders.
+                if target.get_node(root_hash).is_none() {
+                    transfer_set.insert(root_hash.clone());
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Copies every node in the transfer set from `source` into `target`, then
@@ -46,9 +90,17 @@ pub fn reconcile_node_stores(
     target: &mut impl WritableNodeStore,
     root_hash: &Hash,
 ) -> usize {
-    // TODO: compute_diff, insert each missing node, set_root, count.
-    let _ = (source, target, root_hash);
-    0
+    let transfer_set = compute_diff(source, target, root_hash);
+
+    for hash in &transfer_set {
+        if let Some(node) = source.get_node(hash) {
+            target.insert(hash.clone(), node.clone());
+        }
+    }
+
+    target.set_root(root_hash.clone());
+
+    transfer_set.len()
 }
 
 pub struct Syncer {

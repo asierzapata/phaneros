@@ -172,6 +172,47 @@ mod compute_diff_merkle_properties {
     }
 
     #[test]
+    fn duplicated_folder_is_transferred_once() {
+        // Two backups holding an identical `photos` subtree -> one folder node.
+        let mut local = InMemoryNodeStore::new();
+        let cat = add_file(&mut local, "cat.jpg", b"cat-bytes");
+        let cat_hash = cat.hash.clone();
+        let photos_2023 = add_folder(&mut local, "photos", vec![], vec![cat.clone()]);
+        let photos_2024 = add_folder(&mut local, "photos", vec![], vec![cat]);
+        // Same name + same contents -> same folder hash.
+        assert_eq!(photos_2023.hash, photos_2024.hash);
+
+        // A folder's hash is derived from its children's names+hashes, not its
+        // own name (the name lives in the parent's Entry). Both backups hold a
+        // single identical `photos` child, so the two backup folders collapse to
+        // ONE node too.
+        let backup_2023 = add_folder(&mut local, "backup_2023", vec![photos_2023.clone()], vec![]);
+        let backup_2024 = add_folder(&mut local, "backup_2024", vec![photos_2024], vec![]);
+        assert_eq!(backup_2023.hash, backup_2024.hash);
+        let root = add_folder(&mut local, "root", vec![backup_2023.clone(), backup_2024], vec![]);
+
+        let remote = InMemoryNodeStore::new();
+
+        let recording_local = RecordingStore::new(&local);
+        let diff = compute_diff(&recording_local, &remote, &root.hash);
+
+        // root + ONE shared backup + ONE shared photos + ONE shared cat blob = 4.
+        // (The HashSet guarantees this on its own — see the walk assertion below
+        // for what the dedup *guard* actually buys us.)
+        assert_eq!(diff.len(), 4);
+
+        // The real property: reaching the identical second backup must NOT
+        // re-walk its subtree. The visited guard short-circuits recursion, so
+        // the deepest shared node is fetched from the source exactly once. A
+        // weak `is_none()`-only guard would descend twice and fetch it twice.
+        let requested = recording_local.requested.borrow();
+        let photos_walks = requested.iter().filter(|h| **h == photos_2023.hash).count();
+        let cat_walks = requested.iter().filter(|h| **h == cat_hash).count();
+        assert_eq!(photos_walks, 1, "shared photos subtree was walked more than once");
+        assert_eq!(cat_walks, 1, "shared cat blob was walked more than once");
+    }
+
+    #[test]
     fn shared_subtrees_are_pruned_not_walked() {
         // Remote already has the photos subtree; the walk must never even
         // *look inside* it — that is the whole point of a merkle diff.
