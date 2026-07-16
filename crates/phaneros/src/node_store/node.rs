@@ -1,24 +1,6 @@
+use crate::blob_store::blob::BlobRef;
+
 pub type Hash = String;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FileChunk {
-    pub hash: Hash, // The hash of the file chunk
-    pub size: u64,  // The size of the file chunk
-}
-
-impl FileChunk {
-    pub fn new(bytes: &[u8]) -> Self {
-        FileChunk::from_bytes(bytes)
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let hash = blake3::hash(bytes).to_hex().to_string();
-        FileChunk {
-            hash,
-            size: bytes.len() as u64,
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
@@ -27,7 +9,7 @@ pub enum Node {
         files: Vec<Entry>,
     },
     File {
-        chunks: Vec<FileChunk>,
+        blobs: Vec<BlobRef>,
     },
 }
 
@@ -74,19 +56,19 @@ impl Node {
         (hash, Node::Folder { folders, files })
     }
 
-    pub fn file(chunks: Vec<FileChunk>) -> (Hash, Node) {
+    pub fn file(blobs: Vec<BlobRef>) -> (Hash, Node) {
         let mut hasher = blake3::Hasher::new();
 
         // We add a first byte to the hash to differentiate between files and folders
         // so an empty folder and an empty file don't have the same hash.
         hasher.update(&[1]);
 
-        for chunk in &chunks {
-            hasher.update(chunk.hash.as_bytes());
+        for blob in &blobs {
+            hasher.update(blob.hash.as_bytes());
         }
 
         let hash = hasher.finalize().to_hex().to_string();
 
-        (hash, Node::File { chunks })
+        (hash, Node::File { blobs })
     }
 }

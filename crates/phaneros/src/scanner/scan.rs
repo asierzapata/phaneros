@@ -470,8 +470,8 @@ impl Scanner {
         let (content_hash, node) = match cached_hash {
             Some(hash) => (hash, None),
             None => {
-                let file_chunks = self.file_chunker.chunk_file(path)?;
-                let (hash, node) = Node::file(file_chunks);
+                let file_blobs = self.file_chunker.chunk_file(path)?;
+                let (hash, node) = Node::file(file_blobs);
                 (hash.clone(), Some((hash, node)))
             }
         };

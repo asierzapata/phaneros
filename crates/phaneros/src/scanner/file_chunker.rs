@@ -2,7 +2,7 @@ use std::{fs, io::Read, path::Path};
 
 use thiserror::Error;
 
-use crate::node_store::FileChunk;
+use crate::blob_store::blob::BlobRef;
 
 #[derive(Error, Debug)]
 pub enum FileChunkerError {
@@ -24,7 +24,7 @@ impl FileChunker {
         FileChunker { chunk_size }
     }
 
-    pub fn chunk_file(&self, path: &Path) -> Result<Vec<FileChunk>, FileChunkerError> {
+    pub fn chunk_file(&self, path: &Path) -> Result<Vec<BlobRef>, FileChunkerError> {
         let file = fs::File::open(path).map_err(|e| FileChunkerError::ReadFileFailed {
             path: path.display().to_string(),
             source: e,
@@ -32,7 +32,7 @@ impl FileChunker {
 
         let mut reader = std::io::BufReader::new(file);
         let mut buffer = vec![0; self.chunk_size];
-        let mut chunks = Vec::new();
+        let mut blobs = Vec::new();
 
         loop {
             let bytes_read = match reader.read(&mut buffer) {
@@ -46,9 +46,9 @@ impl FileChunker {
                 }
             };
 
-            chunks.push(FileChunk::from_bytes(&buffer[..bytes_read]));
+            blobs.push(BlobRef::from_bytes(&buffer[..bytes_read]));
         }
 
-        Ok(chunks)
+        Ok(blobs)
     }
 }

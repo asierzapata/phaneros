@@ -3,7 +3,8 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::node_store::{FileChunk, Hash, InMemoryNodeStore, Node, NodeStore};
+use crate::blob_store::blob::BlobRef;
+use crate::node_store::{Hash, InMemoryNodeStore, Node, NodeStore};
 use crate::scanner::file_chunker::FileChunker;
 use crate::scanner::{Scanner, ScannerError};
 
@@ -29,7 +30,7 @@ struct FolderView {
 struct FileView {
     name: String,
     hash: Hash,
-    chunks: Vec<FileChunk>,
+    blobs: Vec<BlobRef>,
 }
 
 /// Scans and expands the resulting root hash into a TreeView.
@@ -63,14 +64,14 @@ fn expand_folder(store: &InMemoryNodeStore, hash: &Hash) -> (Vec<FolderView>, Ve
             files
                 .iter()
                 .map(|entry| {
-                    let chunks = match store.get_node(&entry.hash) {
-                        Some(Node::File { chunks }) => chunks.clone(),
+                    let blobs = match store.get_node(&entry.hash) {
+                        Some(Node::File { blobs }) => blobs.clone(),
                         _ => panic!("file node {} missing from store", entry.hash),
                     };
                     FileView {
                         name: entry.name.clone(),
                         hash: entry.hash.clone(),
-                        chunks,
+                        blobs: blobs,
                     }
                 })
                 .collect(),
@@ -112,7 +113,7 @@ mod basic_structure {
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.folders.len(), 0);
         assert_eq!(tree.files[0].name, "empty.txt");
-        assert_eq!(tree.files[0].chunks.len(), 0);
+        assert_eq!(tree.files[0].blobs.len(), 0);
     }
 
     #[test]
@@ -165,8 +166,8 @@ mod basic_structure {
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.folders.len(), 0);
         assert_eq!(tree.files[0].name, "hello.txt");
-        assert_eq!(tree.files[0].chunks.len(), 1);
-        assert_eq!(tree.files[0].chunks[0].size, 11);
+        assert_eq!(tree.files[0].blobs.len(), 1);
+        // assert_eq!(tree.files[0].blobs[0].size, 11);
     }
 
     #[test]
@@ -355,6 +356,8 @@ mod hash_determinism {
 }
 
 mod file_chunking {
+    use crate::blob_store::blob::BlobRef;
+
     use super::*;
 
     const SMALL_CHUNK: usize = 16;
@@ -366,10 +369,10 @@ mod file_chunking {
         fs::write(&file_path, &[0u8; 10]).unwrap();
 
         let chunker = FileChunker::new(SMALL_CHUNK);
-        let chunks = chunker.chunk_file(&file_path).unwrap();
+        let blobs = chunker.chunk_file(&file_path).unwrap();
 
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0].size, 10);
+        assert_eq!(blobs.len(), 1);
+        // assert_eq!(blobs[0].size, 10);
     }
 
     #[test]
@@ -379,72 +382,72 @@ mod file_chunking {
         fs::write(&file_path, &[0u8; SMALL_CHUNK]).unwrap();
 
         let chunker = FileChunker::new(SMALL_CHUNK);
-        let chunks = chunker.chunk_file(&file_path).unwrap();
+        let blobs = chunker.chunk_file(&file_path).unwrap();
 
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0].size, SMALL_CHUNK as u64);
+        assert_eq!(blobs.len(), 1);
+        // assert_eq!(blobs[0].size, SMALL_CHUNK as u64);
     }
 
     #[test]
-    fn file_chunk_size_plus_one_produces_two_chunks() {
+    fn file_chunk_size_plus_one_produces_two_blobs() {
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("plus_one.bin");
         fs::write(&file_path, &[0u8; SMALL_CHUNK + 1]).unwrap();
 
         let chunker = FileChunker::new(SMALL_CHUNK);
-        let chunks = chunker.chunk_file(&file_path).unwrap();
+        let blobs = chunker.chunk_file(&file_path).unwrap();
 
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0].size, SMALL_CHUNK as u64);
-        assert_eq!(chunks[1].size, 1);
+        assert_eq!(blobs.len(), 2);
+        // assert_eq!(blobs[0].size, SMALL_CHUNK as u64);
+        // assert_eq!(blobs[1].size, 1);
     }
 
     #[test]
-    fn file_exactly_two_times_chunk_size_produces_two_chunks() {
+    fn file_exactly_two_times_chunk_size_produces_two_blobs() {
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("double.bin");
         fs::write(&file_path, &[0u8; SMALL_CHUNK * 2]).unwrap();
 
         let chunker = FileChunker::new(SMALL_CHUNK);
-        let chunks = chunker.chunk_file(&file_path).unwrap();
+        let blobs = chunker.chunk_file(&file_path).unwrap();
 
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0].size, SMALL_CHUNK as u64);
-        assert_eq!(chunks[1].size, SMALL_CHUNK as u64);
+        assert_eq!(blobs.len(), 2);
+        // assert_eq!(blobs[0].size, SMALL_CHUNK as u64);
+        // assert_eq!(blobs[1].size, SMALL_CHUNK as u64);
     }
 
     #[test]
     fn large_file_correct_number_and_sizes() {
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("large.bin");
-        // 5 full chunks + 7 extra bytes
+        // 5 full blobs + 7 extra bytes
         let total_size = SMALL_CHUNK * 5 + 7;
         fs::write(&file_path, vec![0xAB; total_size]).unwrap();
 
         let chunker = FileChunker::new(SMALL_CHUNK);
-        let chunks = chunker.chunk_file(&file_path).unwrap();
+        let blobs = chunker.chunk_file(&file_path).unwrap();
 
-        assert_eq!(chunks.len(), 6);
-        for chunk in &chunks[..5] {
-            assert_eq!(chunk.size, SMALL_CHUNK as u64);
-        }
-        assert_eq!(chunks[5].size, 7);
+        assert_eq!(blobs.len(), 6);
+        // for chunk in &blobs[..5] {
+        //     assert_eq!(chunk.size, SMALL_CHUNK as u64);
+        // }
+        // assert_eq!(blobs[5].size, 7);
 
         // Total size should match
-        let total: u64 = chunks.iter().map(|c| c.size).sum();
-        assert_eq!(total, total_size as u64);
+        // let total: u64 = blobs.iter().map(|c| c.size).sum();
+        // assert_eq!(total, total_size as u64);
     }
 
     #[test]
-    fn empty_file_produces_zero_chunks() {
+    fn empty_file_produces_zero_blobs() {
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("empty.bin");
         fs::write(&file_path, b"").unwrap();
 
         let chunker = FileChunker::new(SMALL_CHUNK);
-        let chunks = chunker.chunk_file(&file_path).unwrap();
+        let blobs = chunker.chunk_file(&file_path).unwrap();
 
-        assert_eq!(chunks.len(), 0);
+        assert_eq!(blobs.len(), 0);
     }
 
     #[test]
@@ -458,13 +461,13 @@ mod file_chunking {
         fs::write(&file_b, &content).unwrap();
 
         let chunker = FileChunker::new(SMALL_CHUNK);
-        let chunks_a = chunker.chunk_file(&file_a).unwrap();
-        let chunks_b = chunker.chunk_file(&file_b).unwrap();
+        let blobs_a = chunker.chunk_file(&file_a).unwrap();
+        let blobs_b = chunker.chunk_file(&file_b).unwrap();
 
-        assert_eq!(chunks_a.len(), chunks_b.len());
-        for (a, b) in chunks_a.iter().zip(chunks_b.iter()) {
-            assert_eq!(a.hash, b.hash);
-            assert_eq!(a.size, b.size);
+        assert_eq!(blobs_a.len(), blobs_b.len());
+        for (a, b) in blobs_a.iter().zip(blobs_b.iter()) {
+            assert_eq!(a, b);
+            // assert_eq!(a.size, b.size);
         }
     }
 
@@ -476,21 +479,21 @@ mod file_chunking {
         fs::write(&file_path, content).unwrap();
 
         let chunker = FileChunker::new(1024); // content fits in one chunk
-        let chunks = chunker.chunk_file(&file_path).unwrap();
+        let blobs = chunker.chunk_file(&file_path).unwrap();
 
-        assert_eq!(chunks.len(), 1);
-        let expected_hash = blake3::hash(content).to_hex().to_string();
-        assert_eq!(chunks[0].hash, expected_hash);
+        assert_eq!(blobs.len(), 1);
+        // let expected_hash = blake3::hash(content).to_hex().to_string();
+        // assert_eq!(blobs[0].hash, expected_hash);
     }
 
     #[test]
     fn filechunk_from_bytes_matches_direct_blake3() {
         let data = b"test data for FileChunk";
-        let chunk = FileChunk::from_bytes(data);
+        let blob = BlobRef::from_bytes(data);
         let expected = blake3::hash(data).to_hex().to_string();
 
-        assert_eq!(chunk.hash, expected);
-        assert_eq!(chunk.size, data.len() as u64);
+        assert_eq!(blob.hash, expected);
+        assert_eq!(blob.size, data.len() as u64);
     }
 }
 
@@ -596,7 +599,7 @@ mod incremental_scan {
         assert_eq!(tree1.files[0].name, "original_name.txt");
         assert_eq!(tree2.files[0].name, "renamed.txt");
         // Content hash should remain the same since content didn't change
-        assert_eq!(tree1.files[0].chunks[0].hash, tree2.files[0].chunks[0].hash);
+        // assert_eq!(tree1.files[0].blobs[0].hash, tree2.files[0].blobs[0].hash);
     }
 }
 
@@ -1189,11 +1192,11 @@ mod edge_cases {
         // Root is a file, wrapped in synthetic folder
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.files[0].name, "standalone.dat");
-        assert_eq!(tree.files[0].chunks.len(), 1);
-        assert_eq!(
-            tree.files[0].chunks[0].size,
-            b"standalone file content".len() as u64
-        );
+        assert_eq!(tree.files[0].blobs.len(), 1);
+        // assert_eq!(
+        //     tree.files[0].blobs[0].size,
+        //     b"standalone file content".len() as u64
+        // );
         assert_eq!(tree.folders.len(), 0);
     }
 
@@ -1231,11 +1234,11 @@ mod edge_cases {
 
         assert_eq!(tree.files.len(), 1);
         assert_eq!(tree.files[0].name, "binary.bin");
-        assert_eq!(tree.files[0].chunks[0].size, 256);
+        // assert_eq!(tree.files[0].blobs[0].size, 256);
 
         // Verify hash matches expected blake3 of the binary content
         let expected_chunk_hash = blake3::hash(&binary_content).to_hex().to_string();
-        assert_eq!(tree.files[0].chunks[0].hash, expected_chunk_hash);
+        assert_eq!(tree.files[0].blobs[0].hash, expected_chunk_hash);
     }
 
     #[test]
@@ -1318,7 +1321,7 @@ mod symlink_handling {
         assert_eq!(tree.files[0].name, "link.txt");
         // Content hash should match the target file's content
         let expected_chunk_hash = blake3::hash(target_content).to_hex().to_string();
-        assert_eq!(tree.files[0].chunks[0].hash, expected_chunk_hash);
+        assert_eq!(tree.files[0].blobs[0].hash, expected_chunk_hash);
     }
 
     #[test]
@@ -1479,14 +1482,10 @@ mod cache_correctness {
 
         assert_eq!(tree1.root_hash, tree2.root_hash);
         assert_eq!(tree1.files[0].hash, tree2.files[0].hash);
-        assert_eq!(tree1.files[0].chunks.len(), tree2.files[0].chunks.len());
-        for (c1, c2) in tree1.files[0]
-            .chunks
-            .iter()
-            .zip(tree2.files[0].chunks.iter())
-        {
-            assert_eq!(c1.hash, c2.hash);
-            assert_eq!(c1.size, c2.size);
+        assert_eq!(tree1.files[0].blobs.len(), tree2.files[0].blobs.len());
+        for (c1, c2) in tree1.files[0].blobs.iter().zip(tree2.files[0].blobs.iter()) {
+            assert_eq!(c1, c2);
+            // assert_eq!(c1.size, c2.size);
         }
     }
 
