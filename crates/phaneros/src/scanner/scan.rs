@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use std::{fs, time::SystemTime};
 use thiserror::Error;
 
+use crate::blob_store::InMemoryBlobStore;
 use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore};
 use crate::scanner::file_chunker::{FileChunker, FileChunkerError};
 use crate::utils::observer::Publisher;
@@ -178,7 +179,10 @@ impl Scanner {
             should_show_progress,
             status: ScannerStatus::Idle,
             publisher: Publisher::new(),
-            file_chunker: FileChunker::new(1024 * 1024), // 1 MB chunk size
+            file_chunker: FileChunker::new(
+                1024 * 1024, // 1 MB chunk size
+                Arc::new(RwLock::new(InMemoryBlobStore::new())),
+            ),
             snapshot_buffer_size: 10,
             current_snapshot: None,
             scan_snapshots: VecDeque::new(),
@@ -190,12 +194,12 @@ impl Scanner {
         &mut self.publisher
     }
 
-    /// The content-addressed store this scanner writes into. Readers (syncer,
-    /// future GUI) can hold a clone of this handle: nodes are immutable, so a
-    /// reader walking from any root hash it has seen always gets a consistent
-    /// tree, even while a new scan is committing.
-    pub fn store(&self) -> Arc<RwLock<InMemoryNodeStore>> {
+    pub fn get_store(&self) -> Arc<RwLock<InMemoryNodeStore>> {
         Arc::clone(&self.node_store)
+    }
+
+    pub fn get_blob_store(&self) -> Arc<RwLock<InMemoryBlobStore>> {
+        Arc::clone(&self.file_chunker.blob_store)
     }
 
     pub fn get_path(&self) -> &Path {
