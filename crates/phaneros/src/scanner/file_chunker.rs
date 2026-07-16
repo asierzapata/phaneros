@@ -1,8 +1,13 @@
-use std::{fs, io::Read, path::Path};
+use std::{
+    fs,
+    io::Read,
+    path::Path,
+    sync::{Arc, RwLock},
+};
 
 use thiserror::Error;
 
-use crate::blob_store::blob::BlobRef;
+use crate::blob_store::{Blob, InMemoryBlobStore, blob::BlobRef};
 
 #[derive(Error, Debug)]
 pub enum FileChunkerError {
@@ -17,11 +22,15 @@ pub enum FileChunkerError {
 #[derive(Debug)]
 pub struct FileChunker {
     chunk_size: usize,
+    pub blob_store: Arc<RwLock<InMemoryBlobStore>>,
 }
 
 impl FileChunker {
-    pub fn new(chunk_size: usize) -> Self {
-        FileChunker { chunk_size }
+    pub fn new(chunk_size: usize, blob_store: Arc<RwLock<InMemoryBlobStore>>) -> Self {
+        FileChunker {
+            chunk_size,
+            blob_store,
+        }
     }
 
     pub fn chunk_file(&self, path: &Path) -> Result<Vec<BlobRef>, FileChunkerError> {
@@ -32,7 +41,7 @@ impl FileChunker {
 
         let mut reader = std::io::BufReader::new(file);
         let mut buffer = vec![0; self.chunk_size];
-        let mut blobs = Vec::new();
+        let mut blob_refs = Vec::new();
 
         loop {
             let bytes_read = match reader.read(&mut buffer) {
@@ -46,9 +55,20 @@ impl FileChunker {
                 }
             };
 
-            blobs.push(BlobRef::from_bytes(&buffer[..bytes_read]));
+            let blob_ref = BlobRef::from_bytes(&buffer[..bytes_read]);
+
+            let blob = Blob {
+                bytes: buffer[..bytes_read].to_vec(),
+            };
+
+            self.blob_store
+                .write()
+                .unwrap()
+                .insert(blob_ref.hash.clone(), blob);
+
+            blob_refs.push(blob_ref);
         }
 
-        Ok(blobs)
+        Ok(blob_refs)
     }
 }
