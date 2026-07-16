@@ -1,11 +1,12 @@
-use crate::node_store::{Entry, FileChunk, Hash, InMemoryNodeStore, Node, NodeStore};
-
+use crate::blob_store::blob::BlobRef;
+use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore};
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
-    fn chunk(bytes: &[u8]) -> FileChunk {
-        FileChunk::from_bytes(bytes)
+    fn chunk(bytes: &[u8]) -> BlobRef {
+        BlobRef::from_bytes(bytes)
     }
 
     // These tests pin the hash contract by recomputing expected hashes by hand
@@ -13,11 +14,11 @@ mod tests {
     // folders). Any change to the constructors that alters produced hashes —
     // and would therefore invalidate every hash already stored — fails here.
 
-    fn expected_file_hash(chunks: &[FileChunk]) -> Hash {
+    fn expected_file_hash(blobs: &[BlobRef]) -> Hash {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&[1]);
-        for chunk in chunks {
-            hasher.update(chunk.hash.as_bytes());
+        for blob in blobs {
+            hasher.update(blob.hash.as_bytes());
         }
         hasher.finalize().to_hex().to_string()
     }

@@ -23,7 +23,7 @@ pub fn compute_diff(
             } => {
                 compute_folder_diff(source, target, root_hash, &mut transfer_set);
             }
-            crate::node_store::Node::File { chunks: _ } => {
+            crate::node_store::Node::File { blobs: _ } => {
                 compute_file_diff(source, target, root_hash, &mut transfer_set);
             }
         }
@@ -67,7 +67,7 @@ fn compute_file_diff(
 ) {
     if let Some(node) = source.get_node(root_hash) {
         match node {
-            crate::node_store::Node::File { chunks: _ } => {
+            crate::node_store::Node::File { blobs: _ } => {
                 // We have to both check if the file is not on the target node store
                 // and neither has been visited to only transfer it once.
                 // If we don't check the transfer set, we will transfer the same file multiple times

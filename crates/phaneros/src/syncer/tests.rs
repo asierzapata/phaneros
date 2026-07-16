@@ -1,15 +1,14 @@
 use std::cell::RefCell;
 
-use crate::node_store::{
-    Entry, FileChunk, Hash, InMemoryNodeStore, Node, NodeStore, WritableNodeStore,
-};
+use crate::blob_store::blob::BlobRef;
+use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore};
 use crate::syncer::{compute_diff, reconcile_node_stores};
 
 // ---- fixture helpers -------------------------------------------------------
 
 /// Inserts a file node built from `content` and returns its entry.
 fn add_file(store: &mut InMemoryNodeStore, name: &str, content: &[u8]) -> Entry {
-    let (hash, node) = Node::file(vec![FileChunk::from_bytes(content)]);
+    let (hash, node) = Node::file(vec![BlobRef::from_bytes(content)]);
     store.insert(hash.clone(), node);
     Entry::new(name, hash)
 }
@@ -189,7 +188,12 @@ mod compute_diff_merkle_properties {
         let backup_2023 = add_folder(&mut local, "backup_2023", vec![photos_2023.clone()], vec![]);
         let backup_2024 = add_folder(&mut local, "backup_2024", vec![photos_2024], vec![]);
         assert_eq!(backup_2023.hash, backup_2024.hash);
-        let root = add_folder(&mut local, "root", vec![backup_2023.clone(), backup_2024], vec![]);
+        let root = add_folder(
+            &mut local,
+            "root",
+            vec![backup_2023.clone(), backup_2024],
+            vec![],
+        );
 
         let remote = InMemoryNodeStore::new();
 
@@ -208,7 +212,10 @@ mod compute_diff_merkle_properties {
         let requested = recording_local.requested.borrow();
         let photos_walks = requested.iter().filter(|h| **h == photos_2023.hash).count();
         let cat_walks = requested.iter().filter(|h| **h == cat_hash).count();
-        assert_eq!(photos_walks, 1, "shared photos subtree was walked more than once");
+        assert_eq!(
+            photos_walks, 1,
+            "shared photos subtree was walked more than once"
+        );
         assert_eq!(cat_walks, 1, "shared cat blob was walked more than once");
     }
 
