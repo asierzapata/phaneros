@@ -47,7 +47,7 @@ fn scan_view(scanner: &mut Scanner) -> Result<TreeView, ScannerError> {
 }
 
 fn expand_folder(store: &InMemoryNodeStore, hash: &Hash) -> (Vec<FolderView>, Vec<FileView>) {
-    match store.get_node(hash) {
+    match store.get_node(hash).unwrap() {
         Some(Node::Folder { folders, files }) => (
             folders
                 .iter()
@@ -64,7 +64,7 @@ fn expand_folder(store: &InMemoryNodeStore, hash: &Hash) -> (Vec<FolderView>, Ve
             files
                 .iter()
                 .map(|entry| {
-                    let blobs = match store.get_node(&entry.hash) {
+                    let blobs = match store.get_node(&entry.hash).unwrap() {
                         Some(Node::File { blobs }) => blobs.clone(),
                         _ => panic!("file node {} missing from store", entry.hash),
                     };

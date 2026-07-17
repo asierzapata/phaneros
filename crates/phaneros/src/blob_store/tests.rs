@@ -12,7 +12,8 @@ fn insert_bytes(store: &mut InMemoryBlobStore, bytes: &[u8]) -> BlobRef {
         Blob {
             bytes: bytes.to_vec(),
         },
-    );
+    )
+    .unwrap();
     blob_ref
 }
 
@@ -28,7 +29,10 @@ mod round_trip {
         let mut store = InMemoryBlobStore::new();
         let blob_ref = insert_bytes(&mut store, b"cat-bytes");
 
-        let stored = store.get_blob(&blob_ref.hash).expect("blob should exist");
+        let stored = store
+            .get_blob(&blob_ref.hash)
+            .unwrap()
+            .expect("blob should exist");
 
         assert_eq!(stored.bytes, b"cat-bytes");
     }
@@ -41,7 +45,7 @@ mod round_trip {
         let mut store = InMemoryBlobStore::new();
         let blob_ref = insert_bytes(&mut store, b"verify me");
 
-        let stored = store.get_blob(&blob_ref.hash).unwrap();
+        let stored = store.get_blob(&blob_ref.hash).unwrap().unwrap();
         let rehashed = blake3::hash(&stored.bytes).to_hex().to_string();
 
         assert_eq!(rehashed, blob_ref.hash);
@@ -54,7 +58,7 @@ mod round_trip {
         let mut store = InMemoryBlobStore::new();
         let blob_ref = insert_bytes(&mut store, b"12 bytes long");
 
-        let stored = store.get_blob(&blob_ref.hash).unwrap();
+        let stored = store.get_blob(&blob_ref.hash).unwrap().unwrap();
 
         assert_eq!(blob_ref.size, stored.bytes.len() as u64);
     }
@@ -70,8 +74,8 @@ mod lookup {
         let store = InMemoryBlobStore::new();
         let never_inserted = BlobRef::from_bytes(b"ghost");
 
-        assert!(store.get_blob(&never_inserted.hash).is_none());
-        assert!(!store.contains(&never_inserted.hash));
+        assert!(store.get_blob(&never_inserted.hash).unwrap().is_none());
+        assert!(!store.contains(&never_inserted.hash).unwrap());
     }
 
     #[test]
@@ -82,10 +86,10 @@ mod lookup {
         let mut store = InMemoryBlobStore::new();
         let blob_ref = insert_bytes(&mut store, b"present");
 
-        assert!(store.contains(&blob_ref.hash));
+        assert!(store.contains(&blob_ref.hash).unwrap());
         assert_eq!(
-            store.contains(&blob_ref.hash),
-            store.get_blob(&blob_ref.hash).is_some()
+            store.contains(&blob_ref.hash).unwrap(),
+            store.get_blob(&blob_ref.hash).unwrap().is_some()
         );
     }
 }
@@ -115,14 +119,16 @@ mod content_addressing {
         let mut store = InMemoryBlobStore::new();
         let blob_ref = insert_bytes(&mut store, b"original");
 
-        store.insert(
-            blob_ref.hash.clone(),
-            Blob {
-                bytes: b"impostor".to_vec(),
-            },
-        );
+        store
+            .insert(
+                blob_ref.hash.clone(),
+                Blob {
+                    bytes: b"impostor".to_vec(),
+                },
+            )
+            .unwrap();
 
-        let stored = store.get_blob(&blob_ref.hash).unwrap();
+        let stored = store.get_blob(&blob_ref.hash).unwrap().unwrap();
         assert_eq!(stored.bytes, b"original");
         assert_eq!(store.len(), 1);
     }

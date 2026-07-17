@@ -118,11 +118,11 @@ mod tests {
         let (hash_b, node_b) = Node::file(vec![chunk(b"same")]);
         assert_eq!(hash_a, hash_b);
 
-        store.insert(hash_a.clone(), node_a);
-        store.insert(hash_b, node_b);
+        store.insert(hash_a.clone(), node_a).unwrap();
+        store.insert(hash_b, node_b).unwrap();
 
         assert_eq!(store.len(), 1);
-        assert!(store.get_node(&hash_a).is_some());
+        assert!(store.get_node(&hash_a).unwrap().is_some());
     }
 
     #[test]
@@ -132,13 +132,16 @@ mod tests {
         let (file_hash, file_node) = Node::file(vec![chunk(b"content")]);
         let (root_hash, root_node) = Node::folder(vec![], vec![Entry::new("file.txt", &file_hash)]);
 
-        store.insert(file_hash.clone(), file_node);
-        store.insert(root_hash.clone(), root_node);
-        store.set_root(root_hash.clone());
+        store.insert(file_hash.clone(), file_node).unwrap();
+        store.insert(root_hash.clone(), root_node).unwrap();
+        store.set_root(root_hash.clone()).unwrap();
 
-        assert_eq!(store.root_hash(), Some(&root_hash));
+        assert_eq!(store.root_hash().unwrap(), Some(&root_hash));
 
-        let root = store.get_node(&root_hash).expect("root node present");
+        let root = store
+            .get_node(&root_hash)
+            .unwrap()
+            .expect("root node present");
         match root {
             Node::Folder { files, .. } => assert_eq!(files[0].hash, file_hash),
             _ => panic!("expected folder node"),

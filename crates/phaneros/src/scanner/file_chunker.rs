@@ -64,7 +64,8 @@ impl FileChunker {
             self.blob_store
                 .write()
                 .unwrap()
-                .insert(blob_ref.hash.clone(), blob);
+                .insert(blob_ref.hash.clone(), blob)
+                .expect("in-memory blob store insert is infallible");
 
             blob_refs.push(blob_ref);
         }

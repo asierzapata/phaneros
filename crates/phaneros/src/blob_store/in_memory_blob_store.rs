@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::blob_store::{Blob, BlobStore, Hash, WritableBlobStore};
+use crate::blob_store::{Blob, BlobStore, Hash, WritableBlobStore, store::BlobStoreError};
 
 #[derive(Debug, Default)]
 pub struct InMemoryBlobStore {
@@ -12,8 +12,9 @@ impl InMemoryBlobStore {
         Self::default()
     }
 
-    pub fn insert(&mut self, hash: Hash, blob: Blob) {
+    pub fn insert(&mut self, hash: Hash, blob: Blob) -> Result<(), BlobStoreError> {
         self.blobs.entry(hash).or_insert(blob);
+        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -26,17 +27,17 @@ impl InMemoryBlobStore {
 }
 
 impl BlobStore for InMemoryBlobStore {
-    fn get_blob(&self, hash: &Hash) -> Option<Blob> {
-        self.blobs.get(hash).cloned()
+    fn get_blob(&self, hash: &Hash) -> Result<Option<Blob>, BlobStoreError> {
+        Ok(self.blobs.get(hash).cloned())
     }
 
-    fn contains(&self, hash: &Hash) -> bool {
-        self.blobs.contains_key(hash)
+    fn contains(&self, hash: &Hash) -> Result<bool, BlobStoreError> {
+        Ok(self.blobs.contains_key(hash))
     }
 }
 
 impl WritableBlobStore for InMemoryBlobStore {
-    fn insert(&mut self, hash: Hash, blob: Blob) {
-        InMemoryBlobStore::insert(self, hash, blob);
+    fn insert(&mut self, hash: Hash, blob: Blob) -> Result<(), BlobStoreError> {
+        InMemoryBlobStore::insert(self, hash, blob)
     }
 }
