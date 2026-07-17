@@ -1,0 +1,142 @@
+# Sync Protocol v0
+
+## Scope
+
+Every sync operation is scoped to two things:
+
+1. **User**: carried in the `Authorization` header. Ignored by the v0 server, but every client request sends the header from day one so adding real auth later should be easy.
+2. **Drive**: a named root directory that syncs as a unit (what git would call a repository and Obsidian a vault). It lives in the URL: `/drives/{driveId}/...`. We chose "drive" because non-technical users already know the concept from Google Drive. We avoided "folder" because `Node::Folder` already means something else in the codebase, and "repository" because we don't want to import git's expectations (branches, commits).
+
+The two scopes split the data model into:
+
+- **Nodes and the root are drive-scoped.** The root hash points at a node and nodes reference each other by hash, so the drive is build by traversing the node graph. They live under `/drives/{driveId}/...`.
+- **Blobs are user-scoped.** A blob is pure content addressed by its hash, so the same content in two drives is the same blob, what that scoping blobs to the user we end up deduping across drives for free. They live under `/blobs/...`, with the user implied by the `Authorization` header.
+
+We deliberately do not dedup blobs across users, even though a hosted deployment would save some storage with it. Cross-user dedup only pays off for widely shared content, and it is incompatible with end-to-end encryption since identical plaintexts encrypt to different ciphertexts under different user keys, and the known workaround (convergent encryption, where the key derives from the content) lets the server confirm whether a user possesses a specific file which is a privacy leak.
+
+Drives will be implicit in v0, so writing to a driveId creates it if its not present yet.
+
+All hashes are blake3, hex-encoded, computed by the client. Nodes and blobs are immutable and addressed only by hash, never by path (see [main.md](main.md) for why).
+
+## Endpoints
+
+| Method | Path                             | Body      | Success                                              | Absent                          |
+| ------ | -------------------------------- | --------- | ---------------------------------------------------- | ------------------------------- |
+| GET    | `/drives/{driveId}/root`         | –         | 200, JSON                                            | 404 (root never set)            |
+| GET    | `/drives/{driveId}/versions`     | –         | 200, JSON                                            | –                               |
+| PUT    | `/drives/{driveId}/root`         | JSON      | 204                                                  | 409 (Compare-And-Swap mismatch) |
+| GET    | `/drives/{driveId}/nodes/{hash}` | –         | 200, JSON node                                       | 404                             |
+| PUT    | `/drives/{driveId}/nodes/{hash}` | JSON node | 204                                                  | –                               |
+| HEAD   | `/blobs/{hash}`                  | –         | 200                                                  | 404                             |
+| POST   | `/blobs/{hash}/upload`           | –         | 200, JSON ticket (204 if the blob is already stored) | –                               |
+| POST   | `/blobs/{hash}/download`         | –         | 200, JSON ticket                                     | 404                             |
+| PUT    | `/blobs/{hash}/bytes`            | raw bytes | 204                                                  | –                               |
+| GET    | `/blobs/{hash}/bytes`            | –         | 200, raw bytes                                       | 404                             |
+
+### Status code semantics
+
+These map onto the two error families the syncer already distinguishes in `SyncError`:
+
+- **404 is maped as an answer not an error.** It maps to `Ok(None)` in the store traits: "this store does not have that hash". `compute_diff` probes the server with hashes it expects to be absent, so 404 is the common case.
+- **5xx and network failures are transport errors.** They map to `NodeStoreError` / `BlobStoreError`, and the caller may retry. The syncer already retries naturally on the next watcher event.
+- **409 on root PUT means lost race.** Another client moved the root. Re-scan and reconcile from scratch; DO NOT retry the same PUT.
+
+All PUTs are idempotent thanks to the content being addressed by its own hash, so writing the same hash twice is a no-op.
+
+### Root and compare-and-swap
+
+`GET /root` returns:
+
+```json
+{ "hash": "c871c6fd84d8..." }
+```
+
+`PUT /root` sends the new root and the root the client believes is current, so two clients cannot silently stomp each other:
+
+```json
+{
+  "hash": "<new root>",
+  "expected": "<previous root, or null if the drive was empty>"
+}
+```
+
+The server compares `expected` against its current root: match means flip and 204, mismatch means 409 with the actual current root in the body. The v0 server implements this check.
+
+### Node wire format
+
+JSON mirroring the `Node` enum in `crates/phaneros/src/node_store/node.rs`:
+
+```json
+{ "type": "folder",
+  "folders": [ { "name": "sub", "hash": "..." } ],
+  "files":   [ { "name": "a.txt", "hash": "..." } ] }
+
+{ "type": "file",
+  "blobs": [ { "hash": "...", "size": 5885 } ] }
+```
+
+Entries stay sorted by name, as `Node::folder()` already guarantees. The hash is computed over that canonical order, so serialization must not reorder them.
+
+Blobs are raw bytes (`application/octet-stream`).
+
+### Blob transfer is divided into getting a ticket and moving the bytes
+
+Blob upload and download go through the control plane only to obtain a **ticket**. The final bytes themselves move against the ticket's URL. This keeps the door open for serving blobs from a data plane that is not the control-plane server (S3/R2, or a storage service deployed alongside, per main.md) without changing the client.
+
+A ticket is:
+
+```json
+{ "url": "<where to send/fetch the bytes>", "expires_at": <unix timestamp or null> }
+```
+
+- **Upload**: `POST /blobs/{hash}/upload`. 200 returns a ticket and the client PUTs the raw bytes to `ticket.url`. 204 means the server already has the blob and the client skips the upload entirely (a second dedup guard besides `compute_diff`'s HEAD probe).
+- **Download**: `POST /blobs/{hash}/download`. 200 returns a ticket and the client GETs the bytes from `ticket.url`; 404 means the blob is absent, the usual `Ok(None)`.
+
+The client must treat `url` as opaque. In v0 the server mints URLs pointing at itself (`/blobs/{hash}/bytes` on the same host) and `expires_at` is null . Later the same field carries a presigned S3/R2 URL with a real expiry, and an expired ticket simply gets re-requested.
+
+`HEAD /blobs/{hash}` stays on the control plane since its a reponse about metadata, not the bytes themselves.
+
+### Encryption readiness
+
+E2EE is a later addition, but the protocol accepts it as of now, because the server treats content as opaque and only ever interprets the hash graph:
+
+- **Blob bytes are opaque already.** An encrypting client uploads ciphertext, so nothing on the wire changes. Hashes are always computed by the client over the bytes it uploads, so under E2EE they are hashes of ciphertext. Plaintext hashes must never appear on the wire, since they would let the server confirm file contents by hash.
+- **Node `name` fields are opaque strings.** The server never interprets names, so an encrypting client can put ciphertext there. `Node::folder()` hashes whatever bytes the names contain, so the hashing scheme is unaffected. One client-side constraint follows: name encryption must be deterministic, otherwise every re-scan would produce different node hashes for unchanged folders and nothing would ever dedup.
+- **The hash graph stays plaintext.** The server needs `hash` fields readable to walk trees for GC's mark phase. This is the one part of a node the server must understand, but its safe since it reveals nothing about content.
+
+The accepted metadata leaks under E2EE are: tree shape, blob sizes, and update timing remain visible to the server. Key management is entirely client-side and out of protocol scope.
+
+### Versions
+
+Nodes never have versions, only the root pointer does. Every node is immutable, so a "version" of a file is just a different node reachable from an older root. The server therefore records exactly one thing: the sequence of root hashes as they flip. On every accepted root PUT it appends `{root, at}` to the drive's version log.
+
+`GET /drives/{driveId}/versions` returns that log, newest first (empty list if the drive has no history yet):
+
+```json
+{ "versions": [{ "root": "<hash>", "at": <unix timestamp> }] }
+```
+
+Reading a version needs no other endpoint, since the client can take an old root hash and walks it with the existing `GET /drives/{driveId}/nodes/{hash}`, which works because retained nodes stay addressable by hash after they become unreachable from the current root.
+
+Per-file history ("versions of `docs/thesis.md`") is derived client-side. The client should walk the version roots, resolve the path in each, and collect the distinct node hashes. This is forced by E2EE, since resolving a path means reading names, and under E2EE the server cannot do that.
+
+## Invariants
+
+The write ordering the client must follow is very important to maintain the server as simple as possible:
+
+1. **Blobs, then nodes, and root last.** A node PUT should imply its blobs are already on the server; the root PUT should imply the whole tree is. The server never has to validate reachability on write, and its visible tree (whatever the root points at) is never dangling.
+2. **Orphans are fine.** A client that crashes mid-upload leaves unreachable nodes/blobs. That is the GC's job to clean up.
+3. **The server trusts hashes in v0.** It stores what the client sends under the hash the client names. Verifying blob content against its hash is cheap and worth adding, but it is an integrity feature not a requirement for the protocol to function.
+
+## Deferred (known, intentionally not in v0)
+
+- **Batch negotiation**: `compute_diff` probes one hash per request, which means N round trips. The fix is a `POST .../missing` endpoint taking a hash list and returning the subset the server lacks, one per scope (`/drives/{driveId}/nodes/missing` and `/blobs/missing`).
+- **Auth**: JWT in the `Authorization` header, per main.md.
+- **E2EE**: passphrase-derived keys in the client/daemon, encrypting blob bytes and node names.
+- **Change notifications**: SSE from server to client, per main.md. v0 is push-only from the watching client.
+- **External data plane**: the ticket flow is already in the protocol, so what is deferred is the server minting URLs that point somewhere else (presigned S3/R2) and enforcing `expires_at`. v0 serves the bytes itself.
+- **Drive management**: create/list/delete drives.
+
+## Open questions
+
+1. Does `driveId` come from the server (client registers, gets an id) or the client (a name/uuid the client picks)? v0 uses whatever string the client puts in the URL.

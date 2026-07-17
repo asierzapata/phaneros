@@ -48,6 +48,6 @@ Deleting history is two separate operations. First, version records are pruned a
 
 ##### Comunication with the Client
 
-The control plane will expose a REST API that the client will use to communicate with the server. The API will be secured with JWT tokens and will require authentication for all requests.
+The control plane will expose a REST API that the client will use to communicate with the server. The API will be secured with JWT tokens and will require authentication for all requests. The concrete endpoints, wire formats, and status code semantics are specified in [sync-protocol.md](sync-protocol.md).
 
 From the server to the client communication, we will use SSE to notify the client of changes.
