@@ -192,6 +192,9 @@ pub struct Syncer {
     remote_node_store: Arc<RwLock<HttpNodeStore>>,
     local_blob_store: Arc<RwLock<InMemoryBlobStore>>,
     remote_blob_store: Arc<RwLock<HttpBlobStore>>,
+    /// When set, the local store state is dumped to a text file in this
+    /// directory after every reconcile (debug tooling, off by default).
+    store_dump_dir: Option<std::path::PathBuf>,
 }
 
 impl Syncer {
@@ -210,7 +213,15 @@ impl Syncer {
             remote_node_store,
             local_blob_store,
             remote_blob_store,
+            store_dump_dir: None,
         }
+    }
+
+    /// Enables dumping the local store state to `dir/local_store_dump.txt`
+    /// after every reconcile.
+    pub fn with_store_dump(mut self, dir: std::path::PathBuf) -> Self {
+        self.store_dump_dir = Some(dir);
+        self
     }
 
     pub fn run(&self) {
@@ -230,6 +241,8 @@ impl Syncer {
         let mut remote_node_store = self.remote_node_store.write().unwrap();
         let local_blob_store = self.local_blob_store.read().unwrap();
         let mut remote_blob_store = self.remote_blob_store.write().unwrap();
+        let nodes_before = remote_node_store.len();
+        let blobs_before = remote_blob_store.len();
         let result = reconcile_node_stores(
             &*local_node_store,
             &mut *remote_node_store,
@@ -242,7 +255,24 @@ impl Syncer {
             // on the next watcher event will naturally retry this sync from scratch.
             Err(err) => eprintln!("Syncer failed to reconcile: {}", err),
             Ok(0) => println!("Syncer found no nodes to sync with remote node store."),
-            Ok(transferred) => println!("Syncer transferred {} nodes to remote.", transferred),
+            Ok(transferred) => println!(
+                "Syncer transferred {} nodes and {} blobs to remote (nodes {} -> {}, blobs {} -> {}).",
+                transferred,
+                remote_blob_store.len() - blobs_before,
+                nodes_before,
+                remote_node_store.len(),
+                blobs_before,
+                remote_blob_store.len(),
+            ),
+        }
+        if let Some(dump_dir) = &self.store_dump_dir {
+            if let Err(err) = crate::utils::store_dump::dump_store(
+                &*local_node_store,
+                &*local_blob_store,
+                &dump_dir.join("local_store_dump.txt"),
+            ) {
+                eprintln!("Syncer failed to dump local store state: {}", err);
+            }
         }
     }
 }
