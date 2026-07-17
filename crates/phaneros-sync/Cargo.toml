@@ -1,0 +1,14 @@
+[package]
+name = "phaneros-sync"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = true
+
+[lib]
+
+
+[dependencies]
+blake3 = "1.8.5"
+serde = "1.0.228"

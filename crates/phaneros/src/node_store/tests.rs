@@ -1,4 +1,4 @@
-use crate::blob_store::blob::BlobRef;
+use crate::blob_store::BlobRef;
 use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore};
 #[cfg(test)]
 mod tests {

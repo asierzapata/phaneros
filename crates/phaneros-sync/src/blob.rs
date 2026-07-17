@@ -1,4 +1,4 @@
-pub type Hash = String;
+use crate::hash::Hash;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Blob {

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::node_store::node::{Hash, Node};
+use crate::node_store::{Hash, Node};
 
 #[derive(Debug, Error, PartialEq)]
 pub enum NodeStoreError {
