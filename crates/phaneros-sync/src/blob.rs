@@ -1,11 +1,12 @@
 use crate::hash::Hash;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Blob {
     pub bytes: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct BlobRef {
     pub hash: Hash,
     pub size: u64,
