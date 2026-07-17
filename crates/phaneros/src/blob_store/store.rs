@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::blob_store::blob::{Blob, Hash};
+use crate::blob_store::{Blob, Hash};
 
 #[derive(Debug, Error)]
 pub enum BlobStoreError {

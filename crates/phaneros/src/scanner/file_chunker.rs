@@ -7,7 +7,7 @@ use std::{
 
 use thiserror::Error;
 
-use crate::blob_store::{Blob, InMemoryBlobStore, blob::BlobRef};
+use crate::blob_store::{Blob, BlobRef, InMemoryBlobStore};
 
 #[derive(Error, Debug)]
 pub enum FileChunkerError {

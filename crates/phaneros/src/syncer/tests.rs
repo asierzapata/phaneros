@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use crate::blob_store::{Blob, InMemoryBlobStore, blob::BlobRef};
+use crate::blob_store::{Blob, BlobRef, InMemoryBlobStore};
 use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore, NodeStoreError};
 use crate::syncer::{SyncError, compute_diff, reconcile_node_stores};
 
@@ -24,12 +24,14 @@ impl TestStore {
     /// also stores the content bytes in the blob store.
     fn add_file(&mut self, name: &str, content: &[u8]) -> Entry {
         let blob_ref = BlobRef::from_bytes(content);
-        self.blobs.insert(
-            blob_ref.hash.clone(),
-            Blob {
-                bytes: content.to_vec(),
-            },
-        ).unwrap();
+        self.blobs
+            .insert(
+                blob_ref.hash.clone(),
+                Blob {
+                    bytes: content.to_vec(),
+                },
+            )
+            .unwrap();
         let (hash, node) = Node::file(vec![blob_ref]);
         self.nodes.insert(hash.clone(), node).unwrap();
         Entry::new(name, hash)

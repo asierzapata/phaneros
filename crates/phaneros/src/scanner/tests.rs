@@ -3,7 +3,7 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::blob_store::blob::BlobRef;
+use crate::blob_store::BlobRef;
 use crate::node_store::{Hash, InMemoryNodeStore, Node, NodeStore};
 use crate::scanner::file_chunker::FileChunker;
 use crate::scanner::{Scanner, ScannerError};
@@ -356,7 +356,7 @@ mod hash_determinism {
 }
 
 mod file_chunking {
-    use crate::blob_store::{InMemoryBlobStore, blob::BlobRef};
+    use crate::blob_store::{BlobRef, InMemoryBlobStore};
     use std::sync::{Arc, RwLock};
 
     use super::*;

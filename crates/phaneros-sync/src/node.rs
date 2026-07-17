@@ -1,6 +1,4 @@
-use crate::blob_store::blob::BlobRef;
-
-pub type Hash = String;
+use crate::{blob::BlobRef, hash::Hash};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
