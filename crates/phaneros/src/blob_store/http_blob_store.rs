@@ -29,8 +29,8 @@ impl HttpBlobStore {
 }
 
 impl BlobStore for HttpBlobStore {
-    fn get_blob(&self, hash: &Hash) -> Option<&Blob> {
-        self.blobs.get(hash)
+    fn get_blob(&self, hash: &Hash) -> Option<Blob> {
+        self.blobs.get(hash).cloned()
     }
 
     fn contains(&self, hash: &Hash) -> bool {

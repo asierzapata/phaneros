@@ -35,8 +35,8 @@ impl NodeStore for InMemoryNodeStore {
         self.root.as_ref()
     }
 
-    fn get_node(&self, hash: &Hash) -> Option<&Node> {
-        self.nodes.get(hash)
+    fn get_node(&self, hash: &Hash) -> Option<Node> {
+        self.nodes.get(hash).cloned()
     }
 }
 

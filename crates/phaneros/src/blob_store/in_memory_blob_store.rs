@@ -26,8 +26,8 @@ impl InMemoryBlobStore {
 }
 
 impl BlobStore for InMemoryBlobStore {
-    fn get_blob(&self, hash: &Hash) -> Option<&Blob> {
-        self.blobs.get(hash)
+    fn get_blob(&self, hash: &Hash) -> Option<Blob> {
+        self.blobs.get(hash).cloned()
     }
 
     fn contains(&self, hash: &Hash) -> bool {

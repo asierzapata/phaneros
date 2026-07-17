@@ -1,4 +1,4 @@
-use crate::blob_store::{Blob, BlobRef, BlobStore, InMemoryBlobStore, WritableBlobStore};
+use crate::blob_store::{Blob, BlobRef, BlobStore, InMemoryBlobStore};
 
 // ---- fixture helpers -------------------------------------------------------
 
