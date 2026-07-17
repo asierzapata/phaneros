@@ -1,7 +1,7 @@
 use crate::blob_store::blob::{Blob, Hash};
 
 pub trait BlobStore {
-    fn get_blob(&self, hash: &Hash) -> Option<&Blob>;
+    fn get_blob(&self, hash: &Hash) -> Option<Blob>;
     fn contains(&self, hash: &Hash) -> bool;
 }
 

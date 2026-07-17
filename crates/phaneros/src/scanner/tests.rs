@@ -3,8 +3,7 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::blob_store::{InMemoryBlobStore, blob::BlobRef};
-use std::sync::{Arc, RwLock};
+use crate::blob_store::blob::BlobRef;
 use crate::node_store::{Hash, InMemoryNodeStore, Node, NodeStore};
 use crate::scanner::file_chunker::FileChunker;
 use crate::scanner::{Scanner, ScannerError};
@@ -358,7 +357,7 @@ mod hash_determinism {
 
 mod file_chunking {
     use crate::blob_store::{InMemoryBlobStore, blob::BlobRef};
-use std::sync::{Arc, RwLock};
+    use std::sync::{Arc, RwLock};
 
     use super::*;
 
@@ -370,7 +369,8 @@ use std::sync::{Arc, RwLock};
         let file_path = tmp.path().join("small.bin");
         fs::write(&file_path, &[0u8; 10]).unwrap();
 
-        let chunker = FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+        let chunker =
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);
@@ -383,7 +383,8 @@ use std::sync::{Arc, RwLock};
         let file_path = tmp.path().join("exact.bin");
         fs::write(&file_path, &[0u8; SMALL_CHUNK]).unwrap();
 
-        let chunker = FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+        let chunker =
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);
@@ -396,7 +397,8 @@ use std::sync::{Arc, RwLock};
         let file_path = tmp.path().join("plus_one.bin");
         fs::write(&file_path, &[0u8; SMALL_CHUNK + 1]).unwrap();
 
-        let chunker = FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+        let chunker =
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 2);
@@ -410,7 +412,8 @@ use std::sync::{Arc, RwLock};
         let file_path = tmp.path().join("double.bin");
         fs::write(&file_path, &[0u8; SMALL_CHUNK * 2]).unwrap();
 
-        let chunker = FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+        let chunker =
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 2);
@@ -426,7 +429,8 @@ use std::sync::{Arc, RwLock};
         let total_size = SMALL_CHUNK * 5 + 7;
         fs::write(&file_path, vec![0xAB; total_size]).unwrap();
 
-        let chunker = FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+        let chunker =
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 6);
@@ -446,7 +450,8 @@ use std::sync::{Arc, RwLock};
         let file_path = tmp.path().join("empty.bin");
         fs::write(&file_path, b"").unwrap();
 
-        let chunker = FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+        let chunker =
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 0);
@@ -462,7 +467,8 @@ use std::sync::{Arc, RwLock};
         fs::write(&file_a, &content).unwrap();
         fs::write(&file_b, &content).unwrap();
 
-        let chunker = FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+        let chunker =
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
         let blobs_a = chunker.chunk_file(&file_a).unwrap();
         let blobs_b = chunker.chunk_file(&file_b).unwrap();
 

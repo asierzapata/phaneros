@@ -2,7 +2,7 @@ use crate::node_store::node::{Hash, Node};
 
 pub trait NodeStore {
     fn root_hash(&self) -> Option<&Hash>;
-    fn get_node(&self, hash: &Hash) -> Option<&Node>;
+    fn get_node(&self, hash: &Hash) -> Option<Node>;
 }
 
 /// A node store that can also be written to. The syncer reads both sides

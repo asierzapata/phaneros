@@ -64,7 +64,7 @@ impl NodeStore for RecordingStore<'_> {
         self.inner.root_hash()
     }
 
-    fn get_node(&self, hash: &Hash) -> Option<&Node> {
+    fn get_node(&self, hash: &Hash) -> Option<Node> {
         self.requested.borrow_mut().push(hash.clone());
         self.inner.get_node(hash)
     }
@@ -86,7 +86,8 @@ mod compute_diff_spec {
         let r_file = remote.add_file("a.txt", b"content");
         remote.add_folder("root", vec![], vec![r_file]);
 
-        let (diff, _blob_diff) = compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
+        let (diff, _blob_diff) =
+            compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
 
         assert!(diff.is_empty());
     }
@@ -101,7 +102,8 @@ mod compute_diff_spec {
 
         let remote = TestStore::new();
 
-        let (diff, _blob_diff) = compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
+        let (diff, _blob_diff) =
+            compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
 
         // 4 distinct nodes: file_a, file_b, sub, root.
         assert_eq!(diff.len(), 4);
@@ -128,7 +130,8 @@ mod compute_diff_spec {
         let photos = local.add_folder("photos", vec![], vec![cat]);
         let root = local.add_folder("root", vec![docs.clone(), photos], vec![]);
 
-        let (diff, _blob_diff) = compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
+        let (diff, _blob_diff) =
+            compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
 
         // O(depth): new file node, new docs node, new root. Nothing from
         // the untouched photos subtree.
@@ -156,7 +159,8 @@ mod compute_diff_merkle_properties {
         let docs = local.add_folder("docs", vec![], vec![renamed.clone()]);
         let root = local.add_folder("root", vec![docs.clone()], vec![]);
 
-        let (diff, _blob_diff) = compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
+        let (diff, _blob_diff) =
+            compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
 
         // The file's content hash is unchanged, so the remote already has the
         // blob: a rename must transfer zero file bytes.
@@ -180,7 +184,8 @@ mod compute_diff_merkle_properties {
 
         let remote = TestStore::new();
 
-        let (diff, _blob_diff) = compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
+        let (diff, _blob_diff) =
+            compute_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash);
 
         // root + dir_a + dir_b + ONE shared blob = 4, and no duplicates.
         assert_eq!(diff.len(), 4);
@@ -211,7 +216,8 @@ mod compute_diff_merkle_properties {
         let remote = TestStore::new();
 
         let recording_local = RecordingStore::new(&local.nodes);
-        let (diff, _blob_diff) = compute_diff(&recording_local, &remote.nodes, &remote.blobs, &root.hash);
+        let (diff, _blob_diff) =
+            compute_diff(&recording_local, &remote.nodes, &remote.blobs, &root.hash);
 
         // root + ONE shared backup + ONE shared photos + ONE shared cat blob = 4.
         // (The HashSet guarantees this on its own — see the walk assertion below
@@ -248,7 +254,8 @@ mod compute_diff_merkle_properties {
         let root = local.add_folder("root", vec![photos], vec![new_file]);
 
         let recording_local = RecordingStore::new(&local.nodes);
-        let (diff, _blob_diff) = compute_diff(&recording_local, &remote.nodes, &remote.blobs, &root.hash);
+        let (diff, _blob_diff) =
+            compute_diff(&recording_local, &remote.nodes, &remote.blobs, &root.hash);
 
         // Correct transfer set: new root + new file.
         assert_eq!(diff.len(), 2);
@@ -275,14 +282,24 @@ mod reconcile_spec {
 
         let mut remote = TestStore::new();
 
-        let transferred = reconcile_node_stores(&local.nodes, &mut remote.nodes, &local.blobs, &mut remote.blobs, &root.hash).unwrap();
+        let transferred = reconcile_node_stores(
+            &local.nodes,
+            &mut remote.nodes,
+            &local.blobs,
+            &mut remote.blobs,
+            &root.hash,
+        )
+        .unwrap();
 
         assert_eq!(transferred, 2);
         assert_eq!(remote.nodes.root_hash(), Some(&root.hash));
         assert!(remote.nodes.get_node(&root.hash).is_some());
         assert!(remote.nodes.get_node(&file.hash).is_some());
         // The transferred nodes are byte-identical to the source's.
-        assert_eq!(remote.nodes.get_node(&file.hash), local.nodes.get_node(&file.hash));
+        assert_eq!(
+            remote.nodes.get_node(&file.hash),
+            local.nodes.get_node(&file.hash)
+        );
     }
 
     #[test]
@@ -302,7 +319,14 @@ mod reconcile_spec {
         assert_ne!(old.hash, root.hash);
         remote.nodes.set_root(old.hash);
 
-        let transferred = reconcile_node_stores(&local.nodes, &mut remote.nodes, &local.blobs, &mut remote.blobs, &root.hash).unwrap();
+        let transferred = reconcile_node_stores(
+            &local.nodes,
+            &mut remote.nodes,
+            &local.blobs,
+            &mut remote.blobs,
+            &root.hash,
+        )
+        .unwrap();
 
         assert_eq!(transferred, 0);
         assert_eq!(remote.nodes.root_hash(), Some(&root.hash));
@@ -316,14 +340,28 @@ mod reconcile_spec {
         let root_v1 = local_v1.add_folder("root", vec![], vec![file_v1.clone()]);
 
         let mut remote = TestStore::new();
-        reconcile_node_stores(&local_v1.nodes, &mut remote.nodes, &local_v1.blobs, &mut remote.blobs, &root_v1.hash).unwrap();
+        reconcile_node_stores(
+            &local_v1.nodes,
+            &mut remote.nodes,
+            &local_v1.blobs,
+            &mut remote.blobs,
+            &root_v1.hash,
+        )
+        .unwrap();
 
         // Version 2 replaces the file.
         let mut local_v2 = TestStore::new();
         let file_v2 = local_v2.add_file("doc.txt", b"v2");
         let root_v2 = local_v2.add_folder("root", vec![], vec![file_v2]);
 
-        reconcile_node_stores(&local_v2.nodes, &mut remote.nodes, &local_v2.blobs, &mut remote.blobs, &root_v2.hash).unwrap();
+        reconcile_node_stores(
+            &local_v2.nodes,
+            &mut remote.nodes,
+            &local_v2.blobs,
+            &mut remote.blobs,
+            &root_v2.hash,
+        )
+        .unwrap();
 
         assert_eq!(remote.nodes.root_hash(), Some(&root_v2.hash));
         // Old version's nodes are still reachable by hash: this is what makes
