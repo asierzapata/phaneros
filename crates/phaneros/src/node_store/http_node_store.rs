@@ -37,18 +37,11 @@ impl HttpNodeStore {
 
 impl NodeStore for HttpNodeStore {
     fn root_hash(&self) -> Result<Option<&Hash>, NodeStoreError> {
-        self.root
-            .as_ref()
-            .ok_or(NodeStoreError::RootRetrieveFailed)
-            .map(Some)
+        Ok(self.root.as_ref())
     }
 
     fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeStoreError> {
-        self.nodes
-            .get(hash)
-            .cloned()
-            .ok_or(NodeStoreError::NodeRetrieveFailed(hash.clone()))
-            .map(Some)
+        Ok(self.nodes.get(hash).cloned())
     }
 }
 
