@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::node_store::{Hash, Node, NodeStore, WritableNodeStore};
+use crate::node_store::{Hash, Node, NodeStore, WritableNodeStore, store::NodeStoreError};
 
 #[derive(Debug, Default)]
 pub struct InMemoryNodeStore {
@@ -13,12 +13,14 @@ impl InMemoryNodeStore {
         Self::default()
     }
 
-    pub fn insert(&mut self, hash: Hash, node: Node) {
+    pub fn insert(&mut self, hash: Hash, node: Node) -> Result<(), NodeStoreError> {
         self.nodes.entry(hash).or_insert(node);
+        Ok(())
     }
 
-    pub fn set_root(&mut self, hash: Hash) {
+    pub fn set_root(&mut self, hash: Hash) -> Result<(), NodeStoreError> {
         self.root = Some(hash);
+        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -31,21 +33,21 @@ impl InMemoryNodeStore {
 }
 
 impl NodeStore for InMemoryNodeStore {
-    fn root_hash(&self) -> Option<&Hash> {
-        self.root.as_ref()
+    fn root_hash(&self) -> Result<Option<&Hash>, NodeStoreError> {
+        Ok(self.root.as_ref())
     }
 
-    fn get_node(&self, hash: &Hash) -> Option<Node> {
-        self.nodes.get(hash).cloned()
+    fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeStoreError> {
+        Ok(self.nodes.get(hash).cloned())
     }
 }
 
 impl WritableNodeStore for InMemoryNodeStore {
-    fn insert(&mut self, hash: Hash, node: Node) {
-        InMemoryNodeStore::insert(self, hash, node);
+    fn insert(&mut self, hash: Hash, node: Node) -> Result<(), NodeStoreError> {
+        InMemoryNodeStore::insert(self, hash, node)
     }
 
-    fn set_root(&mut self, hash: Hash) {
-        InMemoryNodeStore::set_root(self, hash);
+    fn set_root(&mut self, hash: Hash) -> Result<(), NodeStoreError> {
+        InMemoryNodeStore::set_root(self, hash)
     }
 }

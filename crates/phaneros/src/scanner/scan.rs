@@ -289,9 +289,13 @@ impl Scanner {
                 {
                     let mut store = self.node_store.write().unwrap();
                     for (hash, node) in nodes {
-                        store.insert(hash, node);
+                        store
+                            .insert(hash, node)
+                            .expect("in-memory node store insert is infallible");
                     }
-                    store.set_root(entry.hash.clone());
+                    store
+                        .set_root(entry.hash.clone())
+                        .expect("in-memory node store set_root is infallible");
                 }
                 self.complete_snapshot(scanned_entries);
                 entry.hash
@@ -469,7 +473,13 @@ impl Scanner {
                 }
                 _ => None,
             })
-            .filter(|hash| self.node_store.read().unwrap().get_node(hash).is_some());
+            .filter(|hash| {
+                self.node_store
+                    .read()
+                    .unwrap()
+                    .get_node(hash)
+                    .is_ok_and(|node| node.is_some())
+            });
 
         let (content_hash, node) = match cached_hash {
             Some(hash) => (hash, None),

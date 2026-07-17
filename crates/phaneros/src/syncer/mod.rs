@@ -6,16 +6,27 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    blob_store::{BlobStore, HttpBlobStore, InMemoryBlobStore, WritableBlobStore},
-    node_store::{Hash, HttpNodeStore, InMemoryNodeStore, NodeStore, WritableNodeStore},
+    blob_store::{BlobStore, BlobStoreError, HttpBlobStore, InMemoryBlobStore, WritableBlobStore},
+    node_store::{
+        Hash, HttpNodeStore, InMemoryNodeStore, NodeStore, NodeStoreError, WritableNodeStore,
+    },
 };
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum SyncError {
+    // These are logic errors, the data is gone. A caller should NOT retry these.
     #[error("source is missing blob {hash} referenced by a file node")]
     MissingSourceBlob { hash: Hash },
     #[error("source is missing node {hash} that was in the transfer set")]
     MissingSourceNode { hash: Hash },
+
+    // These are Transport errors: a store couldn't be reached / read / written.
+    // These are kept distinct from the logic errors above because a caller may reasonably
+    // retry a transport failure while giving up on missing data.
+    #[error(transparent)]
+    NodeStore(#[from] NodeStoreError),
+    #[error(transparent)]
+    BlobStore(#[from] BlobStoreError),
 }
 
 /// Computes the transfer sets: every node reachable from `root_hash` in
@@ -29,11 +40,11 @@ pub fn compute_diff(
     target_node_store: &impl NodeStore,
     target_blob_store: &impl BlobStore,
     root_hash: &Hash,
-) -> (HashSet<Hash>, HashSet<Hash>) {
+) -> Result<(HashSet<Hash>, HashSet<Hash>), SyncError> {
     let mut node_transfer_set = HashSet::new();
     let mut blob_transfer_set = HashSet::new();
 
-    if let Some(node) = source_node_store.get_node(root_hash) {
+    if let Some(node) = source_node_store.get_node(root_hash)? {
         match node {
             crate::node_store::Node::Folder { .. } => {
                 compute_folder_diff(
@@ -43,7 +54,7 @@ pub fn compute_diff(
                     root_hash,
                     &mut node_transfer_set,
                     &mut blob_transfer_set,
-                );
+                )?;
             }
             crate::node_store::Node::File { .. } => {
                 compute_file_diff(
@@ -53,12 +64,12 @@ pub fn compute_diff(
                     root_hash,
                     &mut node_transfer_set,
                     &mut blob_transfer_set,
-                );
+                )?;
             }
         }
     }
 
-    (node_transfer_set, blob_transfer_set)
+    Ok((node_transfer_set, blob_transfer_set))
 }
 
 fn compute_folder_diff(
@@ -68,42 +79,43 @@ fn compute_folder_diff(
     root_hash: &Hash,
     node_transfer_set: &mut HashSet<Hash>,
     blob_transfer_set: &mut HashSet<Hash>,
-) {
-    if let Some(node) = source_node_store.get_node(root_hash) {
-        match node {
-            crate::node_store::Node::Folder { folders, files } => {
-                // We have to both check if the folder is not on the target node store
-                // and neither has been visited to only transfer it once.
-                // If we don't check the transfer set, we will transfer the same folder multiple times
-                // if it is referenced by multiple folders.
-                if target_node_store.get_node(root_hash).is_none()
-                    && node_transfer_set.insert(root_hash.clone())
-                {
-                    for folder in folders {
-                        compute_folder_diff(
-                            source_node_store,
-                            target_node_store,
-                            target_blob_store,
-                            &folder.hash,
-                            node_transfer_set,
-                            blob_transfer_set,
-                        );
-                    }
-                    for file in files {
-                        compute_file_diff(
-                            source_node_store,
-                            target_node_store,
-                            target_blob_store,
-                            &file.hash,
-                            node_transfer_set,
-                            blob_transfer_set,
-                        );
-                    }
-                }
-            }
-            _ => {}
+) -> Result<(), SyncError> {
+    let Some(crate::node_store::Node::Folder { folders, files }) =
+        source_node_store.get_node(root_hash)?
+    else {
+        return Ok(());
+    };
+
+    // We have to both check if the folder is not on the target node store
+    // and neither has been visited to only transfer it once.
+    // If we don't check the transfer set, we will transfer the same folder multiple times
+    // if it is referenced by multiple folders.
+    if target_node_store.get_node(root_hash)?.is_none()
+        && node_transfer_set.insert(root_hash.clone())
+    {
+        for folder in folders {
+            compute_folder_diff(
+                source_node_store,
+                target_node_store,
+                target_blob_store,
+                &folder.hash,
+                node_transfer_set,
+                blob_transfer_set,
+            )?;
+        }
+        for file in files {
+            compute_file_diff(
+                source_node_store,
+                target_node_store,
+                target_blob_store,
+                &file.hash,
+                node_transfer_set,
+                blob_transfer_set,
+            )?;
         }
     }
+
+    Ok(())
 }
 
 fn compute_file_diff(
@@ -113,38 +125,30 @@ fn compute_file_diff(
     root_hash: &Hash,
     node_transfer_set: &mut HashSet<Hash>,
     blob_transfer_set: &mut HashSet<Hash>,
-) {
-    if let Some(node) = source_node_store.get_node(root_hash) {
-        match node {
-            crate::node_store::Node::File { blobs } => {
-                // Same double check as folders: skip if the target already has
-                // the file, and only walk the blobs on the FIRST visit. If the
-                // target has the file node, reconcile's blobs-before-nodes
-                // ordering guarantees it already has the blobs too, so pruning
-                // here is sound.
-                if target_node_store.get_node(root_hash).is_none()
-                    && node_transfer_set.insert(root_hash.clone())
-                {
-                    for blob_ref in blobs {
-                        if !target_blob_store.contains(&blob_ref.hash) {
-                            blob_transfer_set.insert(blob_ref.hash.clone());
-                        }
-                    }
-                }
+) -> Result<(), SyncError> {
+    let Some(crate::node_store::Node::File { blobs }) = source_node_store.get_node(root_hash)?
+    else {
+        return Ok(());
+    };
+
+    if target_node_store.get_node(root_hash)?.is_none()
+        && node_transfer_set.insert(root_hash.clone())
+    {
+        for blob_ref in blobs {
+            if !target_blob_store.contains(&blob_ref.hash)? {
+                blob_transfer_set.insert(blob_ref.hash.clone());
             }
-            _ => {}
         }
     }
+
+    Ok(())
 }
 
 /// Copies every missing blob, then every missing node, from `source` into
-/// `target`, then points `target`'s root at `root_hash`. The order is the
-/// whole design: bytes land before the nodes that reference them, and the
-/// root flips last, so a reader of `target` can never follow a reference to
-/// something that isn't there yet.
+/// `target`, then points `target`'s root at `root_hash`.
 ///
-/// Any missing source blob/node aborts with an error BEFORE `set_root`: the
-/// target may be left with orphaned blobs/nodes (its harmless since GC's will pick it up)
+/// Any missing source blob/node aborts with an error BEFORE `set_root`
+/// The target may be left with orphaned blobs/nodes (its harmless since GC's will pick it up)
 /// but its visible tree is never broken.
 ///
 /// Returns the number of nodes transferred.
@@ -160,23 +164,23 @@ pub fn reconcile_node_stores(
         target_node_store,
         target_blob_store,
         root_hash,
-    );
+    )?;
 
     for hash in &blob_transfer_set {
         let blob = source_blob_store
-            .get_blob(hash)
+            .get_blob(hash)?
             .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
-        target_blob_store.insert(hash.clone(), blob.clone());
+        target_blob_store.insert(hash.clone(), blob)?;
     }
 
     for hash in &node_transfer_set {
         let node = source_node_store
-            .get_node(hash)
+            .get_node(hash)?
             .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
-        target_node_store.insert(hash.clone(), node.clone());
+        target_node_store.insert(hash.clone(), node)?;
     }
 
-    target_node_store.set_root(root_hash.clone());
+    target_node_store.set_root(root_hash.clone())?;
 
     Ok(node_transfer_set.len())
 }

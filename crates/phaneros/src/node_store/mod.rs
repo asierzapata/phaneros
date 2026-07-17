@@ -6,7 +6,7 @@ pub mod store;
 pub use http_node_store::HttpNodeStore;
 pub use in_memory_node_store::InMemoryNodeStore;
 pub use node::{Entry, Hash, Node};
-pub use store::{NodeStore, WritableNodeStore};
+pub use store::{NodeStore, NodeStoreError, WritableNodeStore};
 
 #[cfg(test)]
 mod tests;
