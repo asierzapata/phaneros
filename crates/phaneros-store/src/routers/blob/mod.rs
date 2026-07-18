@@ -15,7 +15,9 @@ use head_or_get_blob_route_handler::head_or_get_blob;
 use upload_blob_bytes_route_handler::upload_blob_bytes;
 use upload_blob_route_handler::upload_blob;
 
-pub fn router() -> Router {
+use crate::state::AppState;
+
+pub fn router() -> Router<AppState> {
     Router::new()
         .route("/{hash}", head(head_or_get_blob))
         .route("/{hash}/upload", post(upload_blob))

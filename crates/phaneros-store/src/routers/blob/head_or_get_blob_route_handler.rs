@@ -1,6 +1,17 @@
-use axum::{extract::Path, http::StatusCode};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+};
 
-pub async fn head_or_get_blob(Path(hash): Path<String>) -> StatusCode {
-    let _ = hash;
-    StatusCode::NOT_IMPLEMENTED
+use crate::state::AppState;
+
+pub async fn head_or_get_blob(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+) -> StatusCode {
+    match state.blob_service.exists(&hash).await {
+        Ok(true) => StatusCode::OK,
+        Ok(false) => StatusCode::NOT_FOUND,
+        Err(_) => StatusCode::NOT_IMPLEMENTED,
+    }
 }

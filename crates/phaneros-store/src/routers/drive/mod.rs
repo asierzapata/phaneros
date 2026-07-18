@@ -12,7 +12,9 @@ use get_versions_route_handler::get_versions;
 use put_node_route_handler::put_node;
 use put_root_route_handler::put_root;
 
-pub fn router() -> Router {
+use crate::state::AppState;
+
+pub fn router() -> Router<AppState> {
     Router::new()
         .route("/root", get(get_root).put(put_root))
         .route("/nodes/{hash}", get(get_node).put(put_node))
