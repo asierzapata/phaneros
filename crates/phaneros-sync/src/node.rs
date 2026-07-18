@@ -26,7 +26,7 @@ pub enum NodeWire {
 }
 
 impl NodeWire {
-    fn reconstruct(self) -> (Hash, Node) {
+    pub fn reconstruct(self) -> (Hash, Node) {
         match self {
             NodeWire::Folder { folders, files } => Node::folder(folders, files),
             NodeWire::File { blobs } => Node::file(blobs),
@@ -109,7 +109,9 @@ mod tests {
         );
 
         let json = serde_json::to_string(&node).unwrap();
-        let (h2, node2) = serde_json::from_str::<NodeWire>(&json).unwrap().reconstruct();
+        let (h2, node2) = serde_json::from_str::<NodeWire>(&json)
+            .unwrap()
+            .reconstruct();
 
         assert_eq!(h1, h2);
         assert_eq!(node, node2);
@@ -123,7 +125,9 @@ mod tests {
         ]);
 
         let json = serde_json::to_string(&node).unwrap();
-        let (h2, node2) = serde_json::from_str::<NodeWire>(&json).unwrap().reconstruct();
+        let (h2, node2) = serde_json::from_str::<NodeWire>(&json)
+            .unwrap()
+            .reconstruct();
 
         assert_eq!(h1, h2);
         assert_eq!(node, node2);
@@ -150,8 +154,10 @@ mod tests {
     // so the hash matches the canonical one regardless of wire order.
     #[test]
     fn reconstruct_normalizes_unsorted_wire_order() {
-        let (canonical, _) =
-            Node::folder(vec![Entry::new("alpha", "ha"), Entry::new("beta", "hb")], vec![]);
+        let (canonical, _) = Node::folder(
+            vec![Entry::new("alpha", "ha"), Entry::new("beta", "hb")],
+            vec![],
+        );
 
         let wire_json = r#"{"type":"folder","folders":[{"name":"beta","hash":"hb"},{"name":"alpha","hash":"ha"}],"files":[]}"#;
         let (reconstructed, _) = serde_json::from_str::<NodeWire>(wire_json)

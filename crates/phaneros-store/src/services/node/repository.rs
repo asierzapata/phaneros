@@ -15,7 +15,7 @@ pub enum NodeRepositoryError {
     #[error("root compare-and-swap mismatch: expected {expected:?}, found {actual:?}")]
     RootMismatch {
         expected: Option<Hash>,
-        actual: Option<Hash>,
+        actual: Hash,
     },
 }
 
