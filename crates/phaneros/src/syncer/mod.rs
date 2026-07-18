@@ -6,9 +6,9 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    blob_store::{BlobStore, BlobStoreError, HttpBlobStore, InMemoryBlobStore, WritableBlobStore},
-    node_store::{
-        Hash, HttpNodeStore, InMemoryNodeStore, NodeStore, NodeStoreError, WritableNodeStore,
+    blob_repository::{BlobRepository, BlobRepositoryError, HttpBlobRepository, InMemoryBlobRepository, WritableBlobRepository},
+    node_repository::{
+        Hash, HttpNodeRepository, InMemoryNodeRepository, NodeRepository, NodeRepositoryError, WritableNodeRepository,
     },
 };
 
@@ -24,43 +24,43 @@ pub enum SyncError {
     // These are kept distinct from the logic errors above because a caller may reasonably
     // retry a transport failure while giving up on missing data.
     #[error(transparent)]
-    NodeStore(#[from] NodeStoreError),
+    NodeRepository(#[from] NodeRepositoryError),
     #[error(transparent)]
-    BlobStore(#[from] BlobStoreError),
+    BlobRepository(#[from] BlobRepositoryError),
 }
 
 /// Computes the transfer sets: every node reachable from `root_hash` in
 /// `source` that `target` does not have, plus every blob those file nodes
-/// reference that `target_blob_store` does not have. When the target already
+/// reference that `target_blob_repository` does not have. When the target already
 /// has a node, its entire subtree is pruned from the walk:
 /// reconcile writes blobs before nodes, so a node's presence on the target
 /// implies its blobs' presence.
 pub fn compute_diff(
-    source_node_store: &impl NodeStore,
-    target_node_store: &impl NodeStore,
-    target_blob_store: &impl BlobStore,
+    source_node_repository: &impl NodeRepository,
+    target_node_repository: &impl NodeRepository,
+    target_blob_repository: &impl BlobRepository,
     root_hash: &Hash,
 ) -> Result<(HashSet<Hash>, HashSet<Hash>), SyncError> {
     let mut node_transfer_set = HashSet::new();
     let mut blob_transfer_set = HashSet::new();
 
-    if let Some(node) = source_node_store.get_node(root_hash)? {
+    if let Some(node) = source_node_repository.get_node(root_hash)? {
         match node {
-            crate::node_store::Node::Folder { .. } => {
+            crate::node_repository::Node::Folder { .. } => {
                 compute_folder_diff(
-                    source_node_store,
-                    target_node_store,
-                    target_blob_store,
+                    source_node_repository,
+                    target_node_repository,
+                    target_blob_repository,
                     root_hash,
                     &mut node_transfer_set,
                     &mut blob_transfer_set,
                 )?;
             }
-            crate::node_store::Node::File { .. } => {
+            crate::node_repository::Node::File { .. } => {
                 compute_file_diff(
-                    source_node_store,
-                    target_node_store,
-                    target_blob_store,
+                    source_node_repository,
+                    target_node_repository,
+                    target_blob_repository,
                     root_hash,
                     &mut node_transfer_set,
                     &mut blob_transfer_set,
@@ -73,15 +73,15 @@ pub fn compute_diff(
 }
 
 fn compute_folder_diff(
-    source_node_store: &impl NodeStore,
-    target_node_store: &impl NodeStore,
-    target_blob_store: &impl BlobStore,
+    source_node_repository: &impl NodeRepository,
+    target_node_repository: &impl NodeRepository,
+    target_blob_repository: &impl BlobRepository,
     root_hash: &Hash,
     node_transfer_set: &mut HashSet<Hash>,
     blob_transfer_set: &mut HashSet<Hash>,
 ) -> Result<(), SyncError> {
-    let Some(crate::node_store::Node::Folder { folders, files }) =
-        source_node_store.get_node(root_hash)?
+    let Some(crate::node_repository::Node::Folder { folders, files }) =
+        source_node_repository.get_node(root_hash)?
     else {
         return Ok(());
     };
@@ -90,14 +90,14 @@ fn compute_folder_diff(
     // and neither has been visited to only transfer it once.
     // If we don't check the transfer set, we will transfer the same folder multiple times
     // if it is referenced by multiple folders.
-    if target_node_store.get_node(root_hash)?.is_none()
+    if target_node_repository.get_node(root_hash)?.is_none()
         && node_transfer_set.insert(root_hash.clone())
     {
         for folder in folders {
             compute_folder_diff(
-                source_node_store,
-                target_node_store,
-                target_blob_store,
+                source_node_repository,
+                target_node_repository,
+                target_blob_repository,
                 &folder.hash,
                 node_transfer_set,
                 blob_transfer_set,
@@ -105,9 +105,9 @@ fn compute_folder_diff(
         }
         for file in files {
             compute_file_diff(
-                source_node_store,
-                target_node_store,
-                target_blob_store,
+                source_node_repository,
+                target_node_repository,
+                target_blob_repository,
                 &file.hash,
                 node_transfer_set,
                 blob_transfer_set,
@@ -119,23 +119,23 @@ fn compute_folder_diff(
 }
 
 fn compute_file_diff(
-    source_node_store: &impl NodeStore,
-    target_node_store: &impl NodeStore,
-    target_blob_store: &impl BlobStore,
+    source_node_repository: &impl NodeRepository,
+    target_node_repository: &impl NodeRepository,
+    target_blob_repository: &impl BlobRepository,
     root_hash: &Hash,
     node_transfer_set: &mut HashSet<Hash>,
     blob_transfer_set: &mut HashSet<Hash>,
 ) -> Result<(), SyncError> {
-    let Some(crate::node_store::Node::File { blobs }) = source_node_store.get_node(root_hash)?
+    let Some(crate::node_repository::Node::File { blobs }) = source_node_repository.get_node(root_hash)?
     else {
         return Ok(());
     };
 
-    if target_node_store.get_node(root_hash)?.is_none()
+    if target_node_repository.get_node(root_hash)?.is_none()
         && node_transfer_set.insert(root_hash.clone())
     {
         for blob_ref in blobs {
-            if !target_blob_store.contains(&blob_ref.hash)? {
+            if !target_blob_repository.contains(&blob_ref.hash)? {
                 blob_transfer_set.insert(blob_ref.hash.clone());
             }
         }
@@ -152,35 +152,35 @@ fn compute_file_diff(
 /// but its visible tree is never broken.
 ///
 /// Returns the number of nodes transferred.
-pub fn reconcile_node_stores(
-    source_node_store: &impl NodeStore,
-    target_node_store: &mut impl WritableNodeStore,
-    source_blob_store: &impl BlobStore,
-    target_blob_store: &mut impl WritableBlobStore,
+pub fn reconcile_node_repositorys(
+    source_node_repository: &impl NodeRepository,
+    target_node_repository: &mut impl WritableNodeRepository,
+    source_blob_repository: &impl BlobRepository,
+    target_blob_repository: &mut impl WritableBlobRepository,
     root_hash: &Hash,
 ) -> Result<usize, SyncError> {
     let (node_transfer_set, blob_transfer_set) = compute_diff(
-        source_node_store,
-        target_node_store,
-        target_blob_store,
+        source_node_repository,
+        target_node_repository,
+        target_blob_repository,
         root_hash,
     )?;
 
     for hash in &blob_transfer_set {
-        let blob = source_blob_store
+        let blob = source_blob_repository
             .get_blob(hash)?
             .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
-        target_blob_store.insert(hash.clone(), blob)?;
+        target_blob_repository.insert(hash.clone(), blob)?;
     }
 
     for hash in &node_transfer_set {
-        let node = source_node_store
+        let node = source_node_repository
             .get_node(hash)?
             .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
-        target_node_store.insert(hash.clone(), node)?;
+        target_node_repository.insert(hash.clone(), node)?;
     }
 
-    target_node_store.set_root(root_hash.clone())?;
+    target_node_repository.set_root(root_hash.clone())?;
 
     Ok(node_transfer_set.len())
 }
@@ -188,10 +188,10 @@ pub fn reconcile_node_stores(
 pub struct Syncer {
     watcher_rx: std::sync::mpsc::Receiver<Hash>,
     initial_root_hash: Hash,
-    local_node_store: Arc<RwLock<InMemoryNodeStore>>,
-    remote_node_store: Arc<RwLock<HttpNodeStore>>,
-    local_blob_store: Arc<RwLock<InMemoryBlobStore>>,
-    remote_blob_store: Arc<RwLock<HttpBlobStore>>,
+    local_node_repository: Arc<RwLock<InMemoryNodeRepository>>,
+    remote_node_repository: Arc<RwLock<HttpNodeRepository>>,
+    local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
+    remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
     /// When set, the local store state is dumped to a text file in this
     /// directory after every reconcile (debug tooling, off by default).
     store_dump_dir: Option<std::path::PathBuf>,
@@ -201,18 +201,18 @@ impl Syncer {
     pub fn new(
         watcher_rx: std::sync::mpsc::Receiver<Hash>,
         initial_root_hash: Hash,
-        local_node_store: Arc<RwLock<InMemoryNodeStore>>,
-        remote_node_store: Arc<RwLock<HttpNodeStore>>,
-        local_blob_store: Arc<RwLock<InMemoryBlobStore>>,
-        remote_blob_store: Arc<RwLock<HttpBlobStore>>,
+        local_node_repository: Arc<RwLock<InMemoryNodeRepository>>,
+        remote_node_repository: Arc<RwLock<HttpNodeRepository>>,
+        local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
+        remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
     ) -> Self {
         Syncer {
             watcher_rx,
             initial_root_hash,
-            local_node_store,
-            remote_node_store,
-            local_blob_store,
-            remote_blob_store,
+            local_node_repository,
+            remote_node_repository,
+            local_blob_repository,
+            remote_blob_repository,
             store_dump_dir: None,
         }
     }
@@ -237,17 +237,17 @@ impl Syncer {
     }
 
     fn reconcile(&self, root_hash: Hash) {
-        let local_node_store = self.local_node_store.read().unwrap();
-        let mut remote_node_store = self.remote_node_store.write().unwrap();
-        let local_blob_store = self.local_blob_store.read().unwrap();
-        let mut remote_blob_store = self.remote_blob_store.write().unwrap();
-        let nodes_before = remote_node_store.len();
-        let blobs_before = remote_blob_store.len();
-        let result = reconcile_node_stores(
-            &*local_node_store,
-            &mut *remote_node_store,
-            &*local_blob_store,
-            &mut *remote_blob_store,
+        let local_node_repository = self.local_node_repository.read().unwrap();
+        let mut remote_node_repository = self.remote_node_repository.write().unwrap();
+        let local_blob_repository = self.local_blob_repository.read().unwrap();
+        let mut remote_blob_repository = self.remote_blob_repository.write().unwrap();
+        let nodes_before = remote_node_repository.len();
+        let blobs_before = remote_blob_repository.len();
+        let result = reconcile_node_repositorys(
+            &*local_node_repository,
+            &mut *remote_node_repository,
+            &*local_blob_repository,
+            &mut *remote_blob_repository,
             &root_hash,
         );
         match result {
@@ -258,17 +258,17 @@ impl Syncer {
             Ok(transferred) => println!(
                 "Syncer transferred {} nodes and {} blobs to remote (nodes {} -> {}, blobs {} -> {}).",
                 transferred,
-                remote_blob_store.len() - blobs_before,
+                remote_blob_repository.len() - blobs_before,
                 nodes_before,
-                remote_node_store.len(),
+                remote_node_repository.len(),
                 blobs_before,
-                remote_blob_store.len(),
+                remote_blob_repository.len(),
             ),
         }
         if let Some(dump_dir) = &self.store_dump_dir {
             if let Err(err) = crate::utils::store_dump::dump_store(
-                &*local_node_store,
-                &*local_blob_store,
+                &*local_node_repository,
+                &*local_blob_repository,
                 &dump_dir.join("local_store_dump.txt"),
             ) {
                 eprintln!("Syncer failed to dump local store state: {}", err);

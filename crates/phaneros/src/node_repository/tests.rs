@@ -1,5 +1,5 @@
-use crate::blob_store::BlobRef;
-use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore};
+use crate::blob_repository::BlobRef;
+use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository};
 #[cfg(test)]
 mod tests {
 
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn store_deduplicates_identical_nodes() {
-        let mut store = InMemoryNodeStore::new();
+        let mut store = InMemoryNodeRepository::new();
 
         let (hash_a, node_a) = Node::file(vec![chunk(b"same")]);
         let (hash_b, node_b) = Node::file(vec![chunk(b"same")]);
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn store_returns_root_and_nodes_by_hash() {
-        let mut store = InMemoryNodeStore::new();
+        let mut store = InMemoryNodeRepository::new();
 
         let (file_hash, file_node) = Node::file(vec![chunk(b"content")]);
         let (root_hash, root_node) = Node::folder(vec![], vec![Entry::new("file.txt", &file_hash)]);

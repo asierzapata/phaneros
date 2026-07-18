@@ -1,22 +1,22 @@
 use std::cell::RefCell;
 
-use crate::blob_store::{Blob, BlobRef, InMemoryBlobStore};
-use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore, NodeStoreError};
-use crate::syncer::{SyncError, compute_diff, reconcile_node_stores};
+use crate::blob_repository::{Blob, BlobRef, InMemoryBlobRepository};
+use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository, NodeRepositoryError};
+use crate::syncer::{SyncError, compute_diff, reconcile_node_repositorys};
 
 // ---- fixture helpers -------------------------------------------------------
 
 /// One side of a sync: node store + blob store, which always travel together.
 struct TestStore {
-    nodes: InMemoryNodeStore,
-    blobs: InMemoryBlobStore,
+    nodes: InMemoryNodeRepository,
+    blobs: InMemoryBlobRepository,
 }
 
 impl TestStore {
     fn new() -> Self {
         TestStore {
-            nodes: InMemoryNodeStore::new(),
-            blobs: InMemoryBlobStore::new(),
+            nodes: InMemoryNodeRepository::new(),
+            blobs: InMemoryBlobRepository::new(),
         }
     }
 
@@ -45,15 +45,15 @@ impl TestStore {
     }
 }
 
-/// A NodeStore wrapper that records every hash requested from it, so tests
+/// A NodeRepository wrapper that records every hash requested from it, so tests
 /// can assert that shared subtrees are pruned (never walked).
 struct RecordingStore<'a> {
-    inner: &'a InMemoryNodeStore,
+    inner: &'a InMemoryNodeRepository,
     requested: RefCell<Vec<Hash>>,
 }
 
 impl<'a> RecordingStore<'a> {
-    fn new(inner: &'a InMemoryNodeStore) -> Self {
+    fn new(inner: &'a InMemoryNodeRepository) -> Self {
         RecordingStore {
             inner,
             requested: RefCell::new(Vec::new()),
@@ -61,12 +61,12 @@ impl<'a> RecordingStore<'a> {
     }
 }
 
-impl NodeStore for RecordingStore<'_> {
-    fn root_hash(&self) -> Result<Option<&Hash>, NodeStoreError> {
+impl NodeRepository for RecordingStore<'_> {
+    fn root_hash(&self) -> Result<Option<&Hash>, NodeRepositoryError> {
         self.inner.root_hash()
     }
 
-    fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeStoreError> {
+    fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeRepositoryError> {
         self.requested.borrow_mut().push(hash.clone());
         self.inner.get_node(hash)
     }
@@ -271,7 +271,7 @@ mod compute_diff_merkle_properties {
     }
 }
 
-// ---- reconcile_node_stores: transfer + root flip ----------------------------
+// ---- reconcile_node_repositorys: transfer + root flip ----------------------------
 
 mod reconcile_spec {
     use super::*;
@@ -284,7 +284,7 @@ mod reconcile_spec {
 
         let mut remote = TestStore::new();
 
-        let transferred = reconcile_node_stores(
+        let transferred = reconcile_node_repositorys(
             &local.nodes,
             &mut remote.nodes,
             &local.blobs,
@@ -321,7 +321,7 @@ mod reconcile_spec {
         assert_ne!(old.hash, root.hash);
         remote.nodes.set_root(old.hash).unwrap();
 
-        let transferred = reconcile_node_stores(
+        let transferred = reconcile_node_repositorys(
             &local.nodes,
             &mut remote.nodes,
             &local.blobs,
@@ -342,7 +342,7 @@ mod reconcile_spec {
         let root_v1 = local_v1.add_folder("root", vec![], vec![file_v1.clone()]);
 
         let mut remote = TestStore::new();
-        reconcile_node_stores(
+        reconcile_node_repositorys(
             &local_v1.nodes,
             &mut remote.nodes,
             &local_v1.blobs,
@@ -356,7 +356,7 @@ mod reconcile_spec {
         let file_v2 = local_v2.add_file("doc.txt", b"v2");
         let root_v2 = local_v2.add_folder("root", vec![], vec![file_v2]);
 
-        reconcile_node_stores(
+        reconcile_node_repositorys(
             &local_v2.nodes,
             &mut remote.nodes,
             &local_v2.blobs,
@@ -391,9 +391,9 @@ mod reconcile_error_safety {
         let mut local = TestStore::new();
         let file = local.add_file("doc.txt", b"new bytes");
         let root = local.add_folder("root", vec![], vec![file.clone()]);
-        local.blobs = InMemoryBlobStore::new(); // sabotage: wipe the bytes
+        local.blobs = InMemoryBlobRepository::new(); // sabotage: wipe the bytes
 
-        let result = reconcile_node_stores(
+        let result = reconcile_node_repositorys(
             &local.nodes,
             &mut remote.nodes,
             &local.blobs,

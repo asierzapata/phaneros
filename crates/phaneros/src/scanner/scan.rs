@@ -6,8 +6,8 @@ use std::sync::{Arc, RwLock};
 use std::{fs, time::SystemTime};
 use thiserror::Error;
 
-use crate::blob_store::InMemoryBlobStore;
-use crate::node_store::{Entry, Hash, InMemoryNodeStore, Node, NodeStore};
+use crate::blob_repository::InMemoryBlobRepository;
+use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository};
 use crate::scanner::file_chunker::{FileChunker, FileChunkerError};
 use crate::utils::observer::Publisher;
 
@@ -169,7 +169,7 @@ pub struct Scanner {
     snapshot_buffer_size: usize,
     current_snapshot: Option<ScanSnapshot>,
     scan_snapshots: VecDeque<ScanSnapshot>,
-    node_store: Arc<RwLock<InMemoryNodeStore>>,
+    node_repository: Arc<RwLock<InMemoryNodeRepository>>,
 }
 
 impl Scanner {
@@ -181,12 +181,12 @@ impl Scanner {
             publisher: Publisher::new(),
             file_chunker: FileChunker::new(
                 1024 * 1024, // 1 MB chunk size
-                Arc::new(RwLock::new(InMemoryBlobStore::new())),
+                Arc::new(RwLock::new(InMemoryBlobRepository::new())),
             ),
             snapshot_buffer_size: 10,
             current_snapshot: None,
             scan_snapshots: VecDeque::new(),
-            node_store: Arc::new(RwLock::new(InMemoryNodeStore::new())),
+            node_repository: Arc::new(RwLock::new(InMemoryNodeRepository::new())),
         }
     }
 
@@ -194,12 +194,12 @@ impl Scanner {
         &mut self.publisher
     }
 
-    pub fn get_store(&self) -> Arc<RwLock<InMemoryNodeStore>> {
-        Arc::clone(&self.node_store)
+    pub fn get_store(&self) -> Arc<RwLock<InMemoryNodeRepository>> {
+        Arc::clone(&self.node_repository)
     }
 
-    pub fn get_blob_store(&self) -> Arc<RwLock<InMemoryBlobStore>> {
-        Arc::clone(&self.file_chunker.blob_store)
+    pub fn get_blob_repository(&self) -> Arc<RwLock<InMemoryBlobRepository>> {
+        Arc::clone(&self.file_chunker.blob_repository)
     }
 
     pub fn get_path(&self) -> &Path {
@@ -287,7 +287,7 @@ impl Scanner {
                 // Commit the whole scan in one write lock so readers never see
                 // a root whose nodes aren't all present yet.
                 {
-                    let mut store = self.node_store.write().unwrap();
+                    let mut store = self.node_repository.write().unwrap();
                     for (hash, node) in nodes {
                         store
                             .insert(hash, node)
@@ -474,7 +474,7 @@ impl Scanner {
                 _ => None,
             })
             .filter(|hash| {
-                self.node_store
+                self.node_repository
                     .read()
                     .unwrap()
                     .get_node(hash)

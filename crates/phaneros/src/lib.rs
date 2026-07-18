@@ -1,5 +1,5 @@
-pub mod blob_store;
-pub mod node_store;
+pub mod blob_repository;
+pub mod node_repository;
 pub mod scanner;
 pub mod syncer;
 pub mod utils;

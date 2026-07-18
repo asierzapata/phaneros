@@ -7,7 +7,7 @@ use std::{
 
 use thiserror::Error;
 
-use crate::blob_store::{Blob, BlobRef, InMemoryBlobStore};
+use crate::blob_repository::{Blob, BlobRef, InMemoryBlobRepository};
 
 #[derive(Error, Debug)]
 pub enum FileChunkerError {
@@ -22,14 +22,14 @@ pub enum FileChunkerError {
 #[derive(Debug)]
 pub struct FileChunker {
     chunk_size: usize,
-    pub blob_store: Arc<RwLock<InMemoryBlobStore>>,
+    pub blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
 }
 
 impl FileChunker {
-    pub fn new(chunk_size: usize, blob_store: Arc<RwLock<InMemoryBlobStore>>) -> Self {
+    pub fn new(chunk_size: usize, blob_repository: Arc<RwLock<InMemoryBlobRepository>>) -> Self {
         FileChunker {
             chunk_size,
-            blob_store,
+            blob_repository,
         }
     }
 
@@ -61,7 +61,7 @@ impl FileChunker {
                 bytes: buffer[..bytes_read].to_vec(),
             };
 
-            self.blob_store
+            self.blob_repository
                 .write()
                 .unwrap()
                 .insert(blob_ref.hash.clone(), blob)

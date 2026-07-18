@@ -3,8 +3,8 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::blob_store::BlobRef;
-use crate::node_store::{Hash, InMemoryNodeStore, Node, NodeStore};
+use crate::blob_repository::BlobRef;
+use crate::node_repository::{Hash, InMemoryNodeRepository, Node, NodeRepository};
 use crate::scanner::file_chunker::FileChunker;
 use crate::scanner::{Scanner, ScannerError};
 
@@ -46,7 +46,7 @@ fn scan_view(scanner: &mut Scanner) -> Result<TreeView, ScannerError> {
     })
 }
 
-fn expand_folder(store: &InMemoryNodeStore, hash: &Hash) -> (Vec<FolderView>, Vec<FileView>) {
+fn expand_folder(store: &InMemoryNodeRepository, hash: &Hash) -> (Vec<FolderView>, Vec<FileView>) {
     match store.get_node(hash).unwrap() {
         Some(Node::Folder { folders, files }) => (
             folders
@@ -356,7 +356,7 @@ mod hash_determinism {
 }
 
 mod file_chunking {
-    use crate::blob_store::{BlobRef, InMemoryBlobStore};
+    use crate::blob_repository::{BlobRef, InMemoryBlobRepository};
     use std::sync::{Arc, RwLock};
 
     use super::*;
@@ -370,7 +370,7 @@ mod file_chunking {
         fs::write(&file_path, &[0u8; 10]).unwrap();
 
         let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);
@@ -384,7 +384,7 @@ mod file_chunking {
         fs::write(&file_path, &[0u8; SMALL_CHUNK]).unwrap();
 
         let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);
@@ -398,7 +398,7 @@ mod file_chunking {
         fs::write(&file_path, &[0u8; SMALL_CHUNK + 1]).unwrap();
 
         let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 2);
@@ -413,7 +413,7 @@ mod file_chunking {
         fs::write(&file_path, &[0u8; SMALL_CHUNK * 2]).unwrap();
 
         let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 2);
@@ -430,7 +430,7 @@ mod file_chunking {
         fs::write(&file_path, vec![0xAB; total_size]).unwrap();
 
         let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 6);
@@ -451,7 +451,7 @@ mod file_chunking {
         fs::write(&file_path, b"").unwrap();
 
         let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 0);
@@ -468,7 +468,7 @@ mod file_chunking {
         fs::write(&file_b, &content).unwrap();
 
         let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobStore::new())));
+            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
         let blobs_a = chunker.chunk_file(&file_a).unwrap();
         let blobs_b = chunker.chunk_file(&file_b).unwrap();
 
@@ -486,7 +486,7 @@ mod file_chunking {
         let content = b"hello blake3 chunk hashing";
         fs::write(&file_path, content).unwrap();
 
-        let chunker = FileChunker::new(1024, Arc::new(RwLock::new(InMemoryBlobStore::new()))); // content fits in one chunk
+        let chunker = FileChunker::new(1024, Arc::new(RwLock::new(InMemoryBlobRepository::new()))); // content fits in one chunk
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);

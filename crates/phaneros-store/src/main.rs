@@ -1,4 +1,4 @@
-use phaneros_server::routers;
+use phaneros_store::routers;
 
 #[tokio::main]
 async fn main() {

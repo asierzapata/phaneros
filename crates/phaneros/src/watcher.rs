@@ -6,8 +6,8 @@ use thiserror::Error;
 
 use std::sync::{Arc, RwLock};
 
-use crate::blob_store::InMemoryBlobStore;
-use crate::node_store::{Hash, InMemoryNodeStore};
+use crate::blob_repository::InMemoryBlobRepository;
+use crate::node_repository::{Hash, InMemoryNodeRepository};
 use crate::scanner::Scanner;
 
 #[derive(Error, Debug)]
@@ -28,8 +28,8 @@ pub struct Watcher {
 pub type WatchHandle = (
     Receiver<Hash>,
     Hash,
-    Arc<RwLock<InMemoryNodeStore>>,
-    Arc<RwLock<InMemoryBlobStore>>,
+    Arc<RwLock<InMemoryNodeRepository>>,
+    Arc<RwLock<InMemoryBlobRepository>>,
 );
 
 impl Watcher {
@@ -42,8 +42,8 @@ impl Watcher {
         let (notify_tx, notify_rx) = channel();
         let (watcher_tx, watcher_rx) = channel();
 
-        let node_store = self.scanner.get_store();
-        let blob_store = self.scanner.get_blob_store().clone();
+        let node_repository = self.scanner.get_store();
+        let blob_repository = self.scanner.get_blob_repository().clone();
 
         let mut debouncer = new_debouncer(Duration::from_secs(5), None, notify_tx)?;
 
@@ -86,6 +86,6 @@ impl Watcher {
             }
         });
 
-        Ok((watcher_rx, initial_root_hash, node_store, blob_store))
+        Ok((watcher_rx, initial_root_hash, node_repository, blob_repository))
     }
 }
