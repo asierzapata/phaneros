@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/phaneros", "crates/phaneros-sync"]
+members = ["crates/phaneros", "crates/phaneros-sync", "crates/phaneros-server"]
 
 [workspace.package]
 edition = "2024"

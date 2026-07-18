@@ -5,12 +5,12 @@
 Every sync operation is scoped to two things:
 
 1. **User**: carried in the `Authorization` header. Ignored by the v0 server, but every client request sends the header from day one so adding real auth later should be easy.
-2. **Drive**: a named root directory that syncs as a unit (what git would call a repository and Obsidian a vault). It lives in the URL: `/drives/{driveId}/...`. We chose "drive" because non-technical users already know the concept from Google Drive. We avoided "folder" because `Node::Folder` already means something else in the codebase, and "repository" because we don't want to import git's expectations (branches, commits).
+2. **Drive**: a named root directory that syncs as a unit (what git would call a repository and Obsidian a vault). It lives in the URL: `/api/drives/{driveId}/...`. We chose "drive" because non-technical users already know the concept from Google Drive. We avoided "folder" because `Node::Folder` already means something else in the codebase, and "repository" because we don't want to import git's expectations (branches, commits).
 
 The two scopes split the data model into:
 
-- **Nodes and the root are drive-scoped.** The root hash points at a node and nodes reference each other by hash, so the drive is build by traversing the node graph. They live under `/drives/{driveId}/...`.
-- **Blobs are user-scoped.** A blob is pure content addressed by its hash, so the same content in two drives is the same blob, what that scoping blobs to the user we end up deduping across drives for free. They live under `/blobs/...`, with the user implied by the `Authorization` header.
+- **Nodes and the root are drive-scoped.** The root hash points at a node and nodes reference each other by hash, so the drive is build by traversing the node graph. They live under `/api/drives/{driveId}/...`.
+- **Blobs are user-scoped.** A blob is pure content addressed by its hash, so the same content in two drives is the same blob, what that scoping blobs to the user we end up deduping across drives for free. They live under `/api/blobs/...`, with the user implied by the `Authorization` header.
 
 We deliberately do not dedup blobs across users, even though a hosted deployment would save some storage with it. Cross-user dedup only pays off for widely shared content, and it is incompatible with end-to-end encryption since identical plaintexts encrypt to different ciphertexts under different user keys, and the known workaround (convergent encryption, where the key derives from the content) lets the server confirm whether a user possesses a specific file which is a privacy leak.
 
@@ -20,18 +20,22 @@ All hashes are blake3, hex-encoded, computed by the client. Nodes and blobs are 
 
 ## Endpoints
 
-| Method | Path                             | Body      | Success                                              | Absent                          |
-| ------ | -------------------------------- | --------- | ---------------------------------------------------- | ------------------------------- |
-| GET    | `/drives/{driveId}/root`         | –         | 200, JSON                                            | 404 (root never set)            |
-| GET    | `/drives/{driveId}/versions`     | –         | 200, JSON                                            | –                               |
-| PUT    | `/drives/{driveId}/root`         | JSON      | 204                                                  | 409 (Compare-And-Swap mismatch) |
-| GET    | `/drives/{driveId}/nodes/{hash}` | –         | 200, JSON node                                       | 404                             |
-| PUT    | `/drives/{driveId}/nodes/{hash}` | JSON node | 204                                                  | –                               |
-| HEAD   | `/blobs/{hash}`                  | –         | 200                                                  | 404                             |
-| POST   | `/blobs/{hash}/upload`           | –         | 200, JSON ticket (204 if the blob is already stored) | –                               |
-| POST   | `/blobs/{hash}/download`         | –         | 200, JSON ticket                                     | 404                             |
-| PUT    | `/blobs/{hash}/bytes`            | raw bytes | 204                                                  | –                               |
-| GET    | `/blobs/{hash}/bytes`            | –         | 200, raw bytes                                       | 404                             |
+All endpoints are mounted under `/api`.
+
+| Method | Path                                  | Body      | Success                                              | Absent                          |
+| ------ | -------------------------------------- | --------- | ---------------------------------------------------- | ------------------------------- |
+| GET    | `/api/drives/{driveId}/root`         | –         | 200, JSON                                            | 404 (root never set)            |
+| GET    | `/api/drives/{driveId}/versions`     | –         | 200, JSON                                            | –                               |
+| PUT    | `/api/drives/{driveId}/root`         | JSON      | 204                                                  | 409 (Compare-And-Swap mismatch) |
+| GET    | `/api/drives/{driveId}/nodes/{hash}` | –         | 200, JSON node                                       | 404                             |
+| PUT    | `/api/drives/{driveId}/nodes/{hash}` | JSON node | 204                                                  | –                               |
+| HEAD   | `/api/blobs/{hash}`                  | –         | 200                                                  | 404                             |
+| POST   | `/api/blobs/{hash}/upload`           | –         | 200, JSON ticket (204 if the blob is already stored) | –                               |
+| POST   | `/api/blobs/{hash}/download`         | –         | 200, JSON ticket                                     | 404                             |
+| PUT    | `/api/blobs/{hash}/bytes`            | raw bytes | 204                                                  | –                               |
+| GET    | `/api/blobs/{hash}/bytes`            | –         | 200, raw bytes                                       | 404                             |
+
+Route segments (`drives`, `nodes`, `blobs`) stay plural to match REST convention. The server's router modules are named singular (`drive`, `node`, `blob`) since each module handles one resource type, not a collection of route segments.
 
 ### Status code semantics
 
@@ -89,12 +93,12 @@ A ticket is:
 { "url": "<where to send/fetch the bytes>", "expires_at": <unix timestamp or null> }
 ```
 
-- **Upload**: `POST /blobs/{hash}/upload`. 200 returns a ticket and the client PUTs the raw bytes to `ticket.url`. 204 means the server already has the blob and the client skips the upload entirely (a second dedup guard besides `compute_diff`'s HEAD probe).
-- **Download**: `POST /blobs/{hash}/download`. 200 returns a ticket and the client GETs the bytes from `ticket.url`; 404 means the blob is absent, the usual `Ok(None)`.
+- **Upload**: `POST /api/blobs/{hash}/upload`. 200 returns a ticket and the client PUTs the raw bytes to `ticket.url`. 204 means the server already has the blob and the client skips the upload entirely (a second dedup guard besides `compute_diff`'s HEAD probe).
+- **Download**: `POST /api/blobs/{hash}/download`. 200 returns a ticket and the client GETs the bytes from `ticket.url`; 404 means the blob is absent, the usual `Ok(None)`.
 
-The client must treat `url` as opaque. In v0 the server mints URLs pointing at itself (`/blobs/{hash}/bytes` on the same host) and `expires_at` is null . Later the same field carries a presigned S3/R2 URL with a real expiry, and an expired ticket simply gets re-requested.
+The client must treat `url` as opaque. In v0 the server mints URLs pointing at itself (`/api/blobs/{hash}/bytes` on the same host) and `expires_at` is null . Later the same field carries a presigned S3/R2 URL with a real expiry, and an expired ticket simply gets re-requested.
 
-`HEAD /blobs/{hash}` stays on the control plane since its a reponse about metadata, not the bytes themselves.
+`HEAD /api/blobs/{hash}` stays on the control plane since its a reponse about metadata, not the bytes themselves.
 
 ### Encryption readiness
 
@@ -110,13 +114,13 @@ The accepted metadata leaks under E2EE are: tree shape, blob sizes, and update t
 
 Nodes never have versions, only the root pointer does. Every node is immutable, so a "version" of a file is just a different node reachable from an older root. The server therefore records exactly one thing: the sequence of root hashes as they flip. On every accepted root PUT it appends `{root, at}` to the drive's version log.
 
-`GET /drives/{driveId}/versions` returns that log, newest first (empty list if the drive has no history yet):
+`GET /api/drives/{driveId}/versions` returns that log, newest first (empty list if the drive has no history yet):
 
 ```json
 { "versions": [{ "root": "<hash>", "at": <unix timestamp> }] }
 ```
 
-Reading a version needs no other endpoint, since the client can take an old root hash and walks it with the existing `GET /drives/{driveId}/nodes/{hash}`, which works because retained nodes stay addressable by hash after they become unreachable from the current root.
+Reading a version needs no other endpoint, since the client can take an old root hash and walks it with the existing `GET /api/drives/{driveId}/nodes/{hash}`, which works because retained nodes stay addressable by hash after they become unreachable from the current root.
 
 Per-file history ("versions of `docs/thesis.md`") is derived client-side. The client should walk the version roots, resolve the path in each, and collect the distinct node hashes. This is forced by E2EE, since resolving a path means reading names, and under E2EE the server cannot do that.
 
@@ -130,7 +134,7 @@ The write ordering the client must follow is very important to maintain the serv
 
 ## Deferred (known, intentionally not in v0)
 
-- **Batch negotiation**: `compute_diff` probes one hash per request, which means N round trips. The fix is a `POST .../missing` endpoint taking a hash list and returning the subset the server lacks, one per scope (`/drives/{driveId}/nodes/missing` and `/blobs/missing`).
+- **Batch negotiation**: `compute_diff` probes one hash per request, which means N round trips. The fix is a `POST .../missing` endpoint taking a hash list and returning the subset the server lacks, one per scope (`/api/drives/{driveId}/nodes/missing` and `/api/blobs/missing`).
 - **Auth**: JWT in the `Authorization` header, per main.md.
 - **E2EE**: passphrase-derived keys in the client/daemon, encrypting blob bytes and node names.
 - **Change notifications**: SSE from server to client, per main.md. v0 is push-only from the watching client.
