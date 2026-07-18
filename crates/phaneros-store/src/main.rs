@@ -1,10 +1,12 @@
-use phaneros_store::routers;
+use phaneros_store::{config::Config, routers};
 
 #[tokio::main]
 async fn main() {
+    let config = Config::load().expect("failed to load config");
+
     let app = routers::router();
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let listener = tokio::net::TcpListener::bind((config.host, config.port))
         .await
         .unwrap();
     println!("listening on {}", listener.local_addr().unwrap());
