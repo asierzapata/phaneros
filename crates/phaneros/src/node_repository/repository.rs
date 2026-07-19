@@ -12,6 +12,13 @@ pub enum NodeRepositoryError {
     NodeRetrieveFailed(Hash),
     #[error("Failed to retrieve root hash")]
     RootRetrieveFailed,
+    /// The store rejected a root PUT because another client moved the root
+    /// (HTTP 409). `actual` is the store's current root, if any. Per the sync
+    /// protocol the client must re-scan and reconcile from scratch rather than
+    /// retry the same PUT; the syncer does this naturally on the next watcher
+    /// event, using the corrected expected root the caller records here.
+    #[error("root compare-and-swap lost the race; store root is now {actual:?}")]
+    RootConflict { actual: Option<Hash> },
 }
 
 pub trait NodeRepository {

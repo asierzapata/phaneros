@@ -10,6 +10,8 @@ pub enum BlobRepositoryError {
     RetrieveFailed(Hash),
     #[error("Failed to check existence of blob for hash: {0}")]
     ExistenceCheckFailed(Hash),
+    #[error("Upload rejected by store for hash {hash}: {reason}")]
+    UploadRejected { hash: Hash, reason: String },
 }
 
 pub trait BlobRepository {
