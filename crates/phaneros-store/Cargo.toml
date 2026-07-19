@@ -16,3 +16,6 @@ serde_json = "1.0.145"
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "migrate"] }
 thiserror = "2.0.18"
 tokio = { version = "1.53.0", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

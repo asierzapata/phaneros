@@ -62,12 +62,20 @@ impl HttpBlobRepository {
             .post(&self.upload_url(&hash))
             .set("Authorization", &self.auth)
             .send_json(serde_json::json!({ "size": size }))
-            .map_err(|e| match e {
-                ureq::Error::Status(status, _) => BlobRepositoryError::UploadRejected {
-                    hash: hash.clone(),
-                    reason: format!("upload ticket returned {}", status),
-                },
-                _ => BlobRepositoryError::InsertFailed(hash.clone()),
+            .map_err(|e| {
+                eprintln!(
+                    "[http-blob] insert stage=ticket hash={} url={} err={:?}",
+                    hash,
+                    self.upload_url(&hash),
+                    e
+                );
+                match e {
+                    ureq::Error::Status(status, _) => BlobRepositoryError::UploadRejected {
+                        hash: hash.clone(),
+                        reason: format!("upload ticket returned {}", status),
+                    },
+                    _ => BlobRepositoryError::InsertFailed(hash.clone()),
+                }
             })?;
 
         // 204 No Content = already stored, skip the rest.
@@ -75,9 +83,13 @@ impl HttpBlobRepository {
             return Ok(());
         }
 
-        let ticket: TicketResponse = ticket_response
-            .into_json()
-            .map_err(|_| BlobRepositoryError::InsertFailed(hash.clone()))?;
+        let ticket: TicketResponse = ticket_response.into_json().map_err(|e| {
+            eprintln!(
+                "[http-blob] insert stage=ticket-parse hash={} err={:?}",
+                hash, e
+            );
+            BlobRepositoryError::InsertFailed(hash.clone())
+        })?;
 
         // Step 2: Upload the raw bytes to the ticket URL.
         self.agent
@@ -85,12 +97,21 @@ impl HttpBlobRepository {
             .set("Authorization", &self.auth)
             .set("Content-Type", "application/octet-stream")
             .send_bytes(&blob.bytes)
-            .map_err(|e| match e {
-                ureq::Error::Status(status, _) => BlobRepositoryError::UploadRejected {
-                    hash: hash.clone(),
-                    reason: format!("put bytes returned {}", status),
-                },
-                _ => BlobRepositoryError::InsertFailed(hash.clone()),
+            .map_err(|e| {
+                eprintln!(
+                    "[http-blob] insert stage=put-bytes hash={} ticket_url={} size={} err={:?}",
+                    hash,
+                    ticket.url,
+                    blob.bytes.len(),
+                    e
+                );
+                match e {
+                    ureq::Error::Status(status, _) => BlobRepositoryError::UploadRejected {
+                        hash: hash.clone(),
+                        reason: format!("put bytes returned {}", status),
+                    },
+                    _ => BlobRepositoryError::InsertFailed(hash.clone()),
+                }
             })?;
 
         // Step 3: Commit the upload.
@@ -98,12 +119,20 @@ impl HttpBlobRepository {
             .post(&self.commit_url(&hash))
             .set("Authorization", &self.auth)
             .call()
-            .map_err(|e| match e {
-                ureq::Error::Status(status, _) => BlobRepositoryError::UploadRejected {
-                    hash: hash.clone(),
-                    reason: format!("commit returned {}", status),
-                },
-                _ => BlobRepositoryError::InsertFailed(hash.clone()),
+            .map_err(|e| {
+                eprintln!(
+                    "[http-blob] insert stage=commit hash={} url={} err={:?}",
+                    hash,
+                    self.commit_url(&hash),
+                    e
+                );
+                match e {
+                    ureq::Error::Status(status, _) => BlobRepositoryError::UploadRejected {
+                        hash: hash.clone(),
+                        reason: format!("commit returned {}", status),
+                    },
+                    _ => BlobRepositoryError::InsertFailed(hash.clone()),
+                }
             })?;
 
         self.inserted += 1;
@@ -130,12 +159,24 @@ impl BlobRepository for HttpBlobRepository {
         {
             Ok(resp) => resp,
             Err(ureq::Error::Status(404, _)) => return Ok(None),
-            Err(_) => return Err(BlobRepositoryError::RetrieveFailed(hash.clone())),
+            Err(e) => {
+                eprintln!(
+                    "[http-blob] get stage=ticket hash={} url={} err={:?}",
+                    hash,
+                    self.download_url(hash),
+                    e
+                );
+                return Err(BlobRepositoryError::RetrieveFailed(hash.clone()));
+            }
         };
 
-        let ticket: TicketResponse = ticket_response
-            .into_json()
-            .map_err(|_| BlobRepositoryError::RetrieveFailed(hash.clone()))?;
+        let ticket: TicketResponse = ticket_response.into_json().map_err(|e| {
+            eprintln!(
+                "[http-blob] get stage=ticket-parse hash={} err={:?}",
+                hash, e
+            );
+            BlobRepositoryError::RetrieveFailed(hash.clone())
+        })?;
 
         // Step 2: Download the raw bytes from the ticket URL.
         let bytes_response = match self
@@ -146,14 +187,23 @@ impl BlobRepository for HttpBlobRepository {
         {
             Ok(resp) => resp,
             Err(ureq::Error::Status(404, _)) => return Ok(None),
-            Err(_) => return Err(BlobRepositoryError::RetrieveFailed(hash.clone())),
+            Err(e) => {
+                eprintln!(
+                    "[http-blob] get stage=bytes hash={} ticket_url={} err={:?}",
+                    hash, ticket.url, e
+                );
+                return Err(BlobRepositoryError::RetrieveFailed(hash.clone()));
+            }
         };
 
         let mut bytes = Vec::new();
         bytes_response
             .into_reader()
             .read_to_end(&mut bytes)
-            .map_err(|_| BlobRepositoryError::RetrieveFailed(hash.clone()))?;
+            .map_err(|e| {
+                eprintln!("[http-blob] get stage=read hash={} err={:?}", hash, e);
+                BlobRepositoryError::RetrieveFailed(hash.clone())
+            })?;
 
         Ok(Some(Blob { bytes }))
     }
@@ -167,7 +217,15 @@ impl BlobRepository for HttpBlobRepository {
         {
             Ok(_) => Ok(true),
             Err(ureq::Error::Status(404, _)) => Ok(false),
-            Err(_) => Err(BlobRepositoryError::ExistenceCheckFailed(hash.clone())),
+            Err(e) => {
+                eprintln!(
+                    "[http-blob] contains hash={} url={} err={:?}",
+                    hash,
+                    self.blob_url(hash),
+                    e
+                );
+                Err(BlobRepositoryError::ExistenceCheckFailed(hash.clone()))
+            }
         }
     }
 }

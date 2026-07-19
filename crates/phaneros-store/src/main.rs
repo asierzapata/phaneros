@@ -9,9 +9,17 @@ use phaneros_store::{
     },
     state::AppState,
 };
+use tracing_subscriber::{EnvFilter, fmt};
 
 #[tokio::main]
 async fn main() {
+    fmt()
+        .pretty()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tower_http=debug")),
+        )
+        .init();
+
     let config = Config::load().expect("failed to load config");
 
     let pool = db::connect(&config.database_path)
@@ -32,6 +40,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind((config.host, config.port))
         .await
         .unwrap();
-    println!("listening on {}", listener.local_addr().unwrap());
+    tracing::info!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
 }
