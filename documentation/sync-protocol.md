@@ -22,18 +22,19 @@ All hashes are blake3, hex-encoded, computed by the client. Nodes and blobs are 
 
 All endpoints are mounted under `/api`.
 
-| Method | Path                                  | Body      | Success                                              | Absent                          |
-| ------ | -------------------------------------- | --------- | ---------------------------------------------------- | ------------------------------- |
-| GET    | `/api/drives/{driveId}/root`         | –         | 200, JSON                                            | 404 (root never set)            |
-| GET    | `/api/drives/{driveId}/versions`     | –         | 200, JSON                                            | –                               |
-| PUT    | `/api/drives/{driveId}/root`         | JSON      | 204                                                  | 409 (Compare-And-Swap mismatch) |
-| GET    | `/api/drives/{driveId}/nodes/{hash}` | –         | 200, JSON node                                       | 404                             |
-| PUT    | `/api/drives/{driveId}/nodes/{hash}` | JSON node | 204                                                  | –                               |
-| HEAD   | `/api/blobs/{hash}`                  | –         | 200                                                  | 404                             |
-| POST   | `/api/blobs/{hash}/upload`           | –         | 200, JSON ticket (204 if the blob is already stored) | –                               |
-| POST   | `/api/blobs/{hash}/download`         | –         | 200, JSON ticket                                     | 404                             |
-| PUT    | `/api/blobs/{hash}/bytes`            | raw bytes | 204                                                  | –                               |
-| GET    | `/api/blobs/{hash}/bytes`            | –         | 200, raw bytes                                       | 404                             |
+| Method | Path                                 | Body          | Success                                              | Absent                          |
+| ------ | ------------------------------------ | ------------- | ---------------------------------------------------- | ------------------------------- |
+| GET    | `/api/drives/{driveId}/root`         | –             | 200, JSON                                            | 404 (root never set)            |
+| GET    | `/api/drives/{driveId}/versions`     | –             | 200, JSON                                            | –                               |
+| PUT    | `/api/drives/{driveId}/root`         | JSON          | 204                                                  | 409 (Compare-And-Swap mismatch) |
+| GET    | `/api/drives/{driveId}/nodes/{hash}` | –             | 200, JSON node                                       | 404                             |
+| PUT    | `/api/drives/{driveId}/nodes/{hash}` | JSON node     | 204                                                  | –                               |
+| HEAD   | `/api/blobs/{hash}`                  | –             | 200                                                  | 404                             |
+| POST   | `/api/blobs/{hash}/upload`           | JSON `{size}` | 200, JSON ticket (204 if the blob is already stored) | –                               |
+| PUT    | `/api/blobs/{hash}/bytes`            | raw bytes     | 204                                                  | –                               |
+| POST   | `/api/blobs/{hash}/commit`           | –             | 204                                                  | 404 (no ticket for this hash)   |
+| POST   | `/api/blobs/{hash}/download`         | –             | 200, JSON ticket                                     | 404                             |
+| GET    | `/api/blobs/{hash}/bytes`            | –             | 200, raw bytes                                       | 404                             |
 
 Route segments (`drives`, `nodes`, `blobs`) stay plural to match REST convention. The store's router modules are named singular (`drive`, `node`, `blob`) since each module handles one resource type, not a collection of route segments.
 
@@ -93,7 +94,11 @@ A ticket is:
 { "url": "<where to send/fetch the bytes>", "expires_at": <unix timestamp or null> }
 ```
 
-- **Upload**: `POST /api/blobs/{hash}/upload`. 200 returns a ticket and the client PUTs the raw bytes to `ticket.url`. 204 means the store already has the blob and the client skips the upload entirely (a second dedup guard besides `compute_diff`'s HEAD probe).
+Because the bytes may bypass the control plane entirely (going straight to S3/R2), a blob has two states in the metadata plane: **declared** (a ticket was minted, size known, bytes not yet stored) and **committed** (bytes stored). Only committed blobs are "held". Upload is therefore three steps:
+
+- **Upload ticket**: `POST /api/blobs/{hash}/upload` with `{ "size": <bytes> }`. The client declares the size here because it is the only point the control plane is guaranteed to see it (the bytes may never touch the control plane). This is also where the size the store records for pruning is captured, and what the ticket enforces. 200 returns a ticket and marks the blob declared; 204 means the store already holds the blob and the client skips the upload (a second dedup guard besides `compute_diff`'s HEAD probe).
+- **Move bytes**: the client PUTs the raw bytes to `ticket.url`. The transfer enforces the declared size. This step does **not** commit the blob.
+- **Commit**: `POST /api/blobs/{hash}/commit`. The client confirms the bytes have landed, and the store flips the blob to committed. This is the sole committer, so the flow is identical whether the bytes went to this store or to R2. 404 means no ticket was ever minted for this hash.
 - **Download**: `POST /api/blobs/{hash}/download`. 200 returns a ticket and the client GETs the bytes from `ticket.url`; 404 means the blob is absent, the usual `Ok(None)`.
 
 The client must treat `url` as opaque. In v0 the store mints URLs pointing at itself (`/api/blobs/{hash}/bytes` on the same host) and `expires_at` is null . Later the same field carries a presigned S3/R2 URL with a real expiry, and an expired ticket simply gets re-requested.

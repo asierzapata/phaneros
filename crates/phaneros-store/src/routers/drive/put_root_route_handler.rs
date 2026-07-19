@@ -15,7 +15,7 @@ pub struct PutRootRequestBody {
 
 #[derive(serde::Serialize)]
 pub struct PutRootConflictResponse {
-    hash: String,
+    hash: Option<String>,
 }
 
 pub async fn put_root(

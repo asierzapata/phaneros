@@ -15,8 +15,12 @@ pub enum NodeRepositoryError {
     #[error("root compare-and-swap mismatch: expected {expected:?}, found {actual:?}")]
     RootMismatch {
         expected: Option<Hash>,
-        actual: Hash,
+        actual: Option<Hash>,
     },
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+    #[error("stored node is corrupt: {0}")]
+    Corruption(#[from] serde_json::Error),
 }
 
 #[async_trait]

@@ -1,3 +1,4 @@
+mod commit_blob_route_handler;
 mod download_blob_bytes_route_handler;
 mod download_blob_route_handler;
 mod head_or_get_blob_route_handler;
@@ -9,6 +10,7 @@ use axum::{
     routing::{head, post, put},
 };
 
+use commit_blob_route_handler::commit_blob;
 use download_blob_bytes_route_handler::download_blob_bytes;
 use download_blob_route_handler::download_blob;
 use head_or_get_blob_route_handler::head_or_get_blob;
@@ -21,6 +23,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/{hash}", head(head_or_get_blob))
         .route("/{hash}/upload", post(upload_blob))
+        .route("/{hash}/commit", post(commit_blob))
         .route("/{hash}/download", post(download_blob))
         .route(
             "/{hash}/bytes",

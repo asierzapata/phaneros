@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
 };
 
-use crate::state::AppState;
+use crate::{services::blob::BlobServiceError, state::AppState};
 
 pub async fn upload_blob_bytes(
     State(state): State<AppState>,
@@ -12,7 +12,12 @@ pub async fn upload_blob_bytes(
     body: Bytes,
 ) -> StatusCode {
     match state.blob_service.put_bytes(&hash, body).await {
-        Ok(_) => StatusCode::NO_CONTENT,
-        Err(_) => StatusCode::NOT_IMPLEMENTED,
+        Ok(()) => StatusCode::NO_CONTENT,
+        // Client-caused: bytes with no ticket, or bytes that don't match the
+        // declared size.
+        Err(BlobServiceError::Unregistered | BlobServiceError::SizeMismatch { .. }) => {
+            StatusCode::BAD_REQUEST
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
