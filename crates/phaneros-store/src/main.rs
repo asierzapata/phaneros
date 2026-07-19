@@ -4,7 +4,7 @@ use phaneros_store::{
     config::Config,
     db, routers,
     services::{
-        blob::{BlobService, SqliteBlobMetadataRepository, UnimplementedBlobBytesRepository},
+        blob::{BlobService, FsBlobBytesRepository, SqliteBlobMetadataRepository},
         node::{NodeService, SqliteNodeRepository},
     },
     state::AppState,
@@ -22,7 +22,7 @@ async fn main() {
         node_service: NodeService::new(Arc::new(SqliteNodeRepository::new(pool.clone()))),
         blob_service: BlobService::new(
             Arc::new(SqliteBlobMetadataRepository::new(pool.clone())),
-            Arc::new(UnimplementedBlobBytesRepository),
+            Arc::new(FsBlobBytesRepository::new(config.blob_storage_path.clone())),
             config.public_url.clone(),
         ),
     };
