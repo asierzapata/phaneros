@@ -6,6 +6,7 @@ use clap::Parser;
 use phaneros::blob_repository::HttpBlobRepository;
 use phaneros::node_repository::HttpNodeRepository;
 use phaneros::syncer::Syncer;
+use phaneros::syncer::sync_state::DriveSession;
 use phaneros::watcher::Watcher;
 
 /// A command-line utility for synchronizing files and directories across
@@ -43,6 +44,9 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
+    let drive_session = DriveSession::open(&cli.drive_id, &cli.path)
+        .expect("failed to initialize sync state session for this drive/path");
+
     let watcher = Watcher::new(cli.path.to_string_lossy().into_owned());
 
     println!("Watcher started, waiting for changes...");
@@ -70,6 +74,7 @@ fn main() {
         remote_node_repository,
         local_blob_repository,
         remote_blob_repository,
+        drive_session,
     );
 
     if let Some(dump_dir) = cli.dump_store {

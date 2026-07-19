@@ -6,11 +6,18 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    blob_repository::{BlobRepository, BlobRepositoryError, HttpBlobRepository, InMemoryBlobRepository, WritableBlobRepository},
-    node_repository::{
-        Hash, HttpNodeRepository, InMemoryNodeRepository, NodeRepository, NodeRepositoryError, WritableNodeRepository,
+    blob_repository::{
+        BlobRepository, BlobRepositoryError, HttpBlobRepository, InMemoryBlobRepository,
+        WritableBlobRepository,
     },
+    node_repository::{
+        Hash, HttpNodeRepository, InMemoryNodeRepository, NodeRepository, NodeRepositoryError,
+        WritableNodeRepository,
+    },
+    syncer::sync_state::DriveSession,
 };
+
+pub mod sync_state;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
@@ -126,7 +133,8 @@ fn compute_file_diff(
     node_transfer_set: &mut HashSet<Hash>,
     blob_transfer_set: &mut HashSet<Hash>,
 ) -> Result<(), SyncError> {
-    let Some(crate::node_repository::Node::File { blobs }) = source_node_repository.get_node(root_hash)?
+    let Some(crate::node_repository::Node::File { blobs }) =
+        source_node_repository.get_node(root_hash)?
     else {
         return Ok(());
     };
@@ -192,6 +200,7 @@ pub struct Syncer {
     remote_node_repository: Arc<RwLock<HttpNodeRepository>>,
     local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
     remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
+    drive_session: DriveSession,
     /// When set, the local store state is dumped to a text file in this
     /// directory after every reconcile (debug tooling, off by default).
     store_dump_dir: Option<std::path::PathBuf>,
@@ -205,6 +214,7 @@ impl Syncer {
         remote_node_repository: Arc<RwLock<HttpNodeRepository>>,
         local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
         remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
+        drive_session: DriveSession,
     ) -> Self {
         Syncer {
             watcher_rx,
@@ -213,6 +223,7 @@ impl Syncer {
             remote_node_repository,
             local_blob_repository,
             remote_blob_repository,
+            drive_session,
             store_dump_dir: None,
         }
     }
@@ -224,19 +235,19 @@ impl Syncer {
         self
     }
 
-    pub fn run(&self) {
+    pub fn run(&mut self) {
         println!(
             "Syncer started with initial root hash: {}",
             self.initial_root_hash
         );
         self.reconcile(self.initial_root_hash.clone());
-        for updated_root_hash in &self.watcher_rx {
+        while let Ok(updated_root_hash) = self.watcher_rx.recv() {
             println!("Syncer received updated root hash: {}", updated_root_hash);
             self.reconcile(updated_root_hash);
         }
     }
 
-    fn reconcile(&self, root_hash: Hash) {
+    fn reconcile(&mut self, root_hash: Hash) {
         let local_node_repository = self.local_node_repository.read().unwrap();
         let mut remote_node_repository = self.remote_node_repository.write().unwrap();
         let local_blob_repository = self.local_blob_repository.read().unwrap();
@@ -254,16 +265,36 @@ impl Syncer {
             // On error the remote root was never flipped, so the remote tree is still the old, consistent one
             // on the next watcher event will naturally retry this sync from scratch.
             Err(err) => eprintln!("Syncer failed to reconcile: {}", err),
-            Ok(0) => println!("Syncer found no nodes to sync with remote node store."),
-            Ok(transferred) => println!(
-                "Syncer transferred {} nodes and {} blobs to remote (nodes {} -> {}, blobs {} -> {}).",
-                transferred,
-                remote_blob_repository.len() - blobs_before,
-                nodes_before,
-                remote_node_repository.len(),
-                blobs_before,
-                remote_blob_repository.len(),
-            ),
+            Ok(0) => {
+                println!("Syncer found no nodes to sync with remote node store.");
+                self.drive_session
+                    .set_last_synced_root(Some(root_hash.clone()));
+                if let Err(err) = self.drive_session.persist() {
+                    panic!(
+                        "Syncer failed to persist sync state after successful reconcile (fail-fast): {}",
+                        err
+                    );
+                }
+            }
+            Ok(transferred) => {
+                println!(
+                    "Syncer transferred {} nodes and {} blobs to remote (nodes {} -> {}, blobs {} -> {}).",
+                    transferred,
+                    remote_blob_repository.len() - blobs_before,
+                    nodes_before,
+                    remote_node_repository.len(),
+                    blobs_before,
+                    remote_blob_repository.len(),
+                );
+                self.drive_session
+                    .set_last_synced_root(Some(root_hash.clone()));
+                if let Err(err) = self.drive_session.persist() {
+                    panic!(
+                        "Syncer failed to persist sync state after successful reconcile (fail-fast): {}",
+                        err
+                    );
+                }
+            }
         }
         if let Some(dump_dir) = &self.store_dump_dir {
             if let Err(err) = crate::utils::store_dump::dump_store(
