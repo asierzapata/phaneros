@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 
 use crate::blob_repository::{Blob, BlobRef, InMemoryBlobRepository};
-use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository, NodeRepositoryError};
-use crate::syncer::{SyncError, compute_diff, reconcile_node_repositorys};
+use crate::node_repository::{
+    Entry, Hash, InMemoryNodeRepository, Node, NodeRepository, NodeRepositoryError,
+};
+use crate::syncer::{SyncError, SyncPlan, compute_diff, plan_sync, reconcile_node_repositorys};
 
 // ---- fixture helpers -------------------------------------------------------
 
@@ -69,6 +71,83 @@ impl NodeRepository for RecordingStore<'_> {
     fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeRepositoryError> {
         self.requested.borrow_mut().push(hash.clone());
         self.inner.get_node(hash)
+    }
+}
+
+// ---- sync planning (B/L/R) -------------------------------------------------
+
+mod sync_plan_spec {
+    use super::*;
+
+    fn hash(v: &str) -> Hash {
+        v.to_string()
+    }
+
+    #[test]
+    fn no_base_always_uses_bootstrap_pull_policy() {
+        let local = hash("local");
+
+        assert_eq!(
+            plan_sync(None, &local, Some(&local)),
+            SyncPlan::BootstrapPull
+        );
+        assert_eq!(plan_sync(None, &local, None), SyncPlan::BootstrapPull);
+    }
+
+    #[test]
+    fn local_and_remote_equal_means_converged_even_with_stale_base() {
+        let base = hash("old-base");
+        let current = hash("current");
+
+        assert_eq!(
+            plan_sync(Some(&base), &current, Some(&current)),
+            SyncPlan::Converged
+        );
+    }
+
+    #[test]
+    fn pull_when_only_remote_changed_since_base() {
+        let base = hash("base");
+        let remote = hash("remote-new");
+
+        assert_eq!(
+            plan_sync(Some(&base), &base, Some(&remote)),
+            SyncPlan::PullRemote
+        );
+    }
+
+    #[test]
+    fn push_when_only_local_changed_since_base() {
+        let base = hash("base");
+        let local = hash("local-new");
+
+        assert_eq!(
+            plan_sync(Some(&base), &local, Some(&base)),
+            SyncPlan::PushLocal
+        );
+    }
+
+    #[test]
+    fn merge_when_both_sides_diverged_from_base() {
+        let base = hash("base");
+        let local = hash("local-new");
+        let remote = hash("remote-new");
+
+        assert_eq!(
+            plan_sync(Some(&base), &local, Some(&remote)),
+            SyncPlan::MergeDiverged
+        );
+    }
+
+    #[test]
+    fn merge_when_remote_is_absent_but_base_exists() {
+        let base = hash("base");
+        let local = hash("local-new");
+
+        assert_eq!(
+            plan_sync(Some(&base), &local, None),
+            SyncPlan::MergeDiverged
+        );
     }
 }
 
