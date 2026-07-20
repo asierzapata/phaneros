@@ -36,6 +36,52 @@ pub enum SyncError {
     BlobRepository(#[from] BlobRepositoryError),
 }
 
+/// High-level sync decision derived from base/local/remote roots.
+///
+/// - `BootstrapPull`: no known base root yet (`B = None`), so bootstrap policy applies.
+/// - `Converged`: local and remote already match.
+/// - `PullRemote`: remote changed while local stayed at base.
+/// - `PushLocal`: local changed while remote stayed at base.
+/// - `MergeDiverged`: both local and remote diverged from base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncPlan {
+    BootstrapPull,
+    Converged,
+    PullRemote,
+    PushLocal,
+    MergeDiverged,
+}
+
+/// Computes the next sync action from:
+///
+/// - `base_root` (`B`): last converged canonical root, persisted locally.
+/// - `local_root` (`L`): current local scanned root.
+/// - `remote_root` (`R`): current remote store root (`None` if never set).
+///
+/// Policy note: when `base_root` is `None`, we always return `BootstrapPull`.
+pub fn plan_sync(
+    base_root: Option<&Hash>,
+    local_root: &Hash,
+    remote_root: Option<&Hash>,
+) -> SyncPlan {
+    if base_root.is_none() {
+        return SyncPlan::BootstrapPull;
+    }
+
+    if remote_root == Some(local_root) {
+        return SyncPlan::Converged;
+    }
+
+    let base_eq_local = base_root == Some(local_root);
+    let base_eq_remote = base_root == remote_root;
+
+    match (base_eq_local, base_eq_remote) {
+        (true, false) => SyncPlan::PullRemote,
+        (false, true) => SyncPlan::PushLocal,
+        _ => SyncPlan::MergeDiverged,
+    }
+}
+
 /// Computes the transfer sets: every node reachable from `root_hash` in
 /// `source` that `target` does not have, plus every blob those file nodes
 /// reference that `target_blob_repository` does not have. When the target already
@@ -193,6 +239,8 @@ pub fn reconcile_node_repositorys(
     Ok(node_transfer_set.len())
 }
 
+const MAX_CONFLICT_RETRIES: usize = 8;
+
 pub struct Syncer {
     watcher_rx: std::sync::mpsc::Receiver<Hash>,
     initial_root_hash: Hash,
@@ -240,70 +288,176 @@ impl Syncer {
             "Syncer started with initial root hash: {}",
             self.initial_root_hash
         );
-        self.reconcile(self.initial_root_hash.clone());
+        self.sync_once(self.initial_root_hash.clone());
         while let Ok(updated_root_hash) = self.watcher_rx.recv() {
             println!("Syncer received updated root hash: {}", updated_root_hash);
-            self.reconcile(updated_root_hash);
+            self.sync_once(updated_root_hash);
         }
     }
 
-    fn reconcile(&mut self, root_hash: Hash) {
-        let local_node_repository = self.local_node_repository.read().unwrap();
-        let mut remote_node_repository = self.remote_node_repository.write().unwrap();
-        let local_blob_repository = self.local_blob_repository.read().unwrap();
-        let mut remote_blob_repository = self.remote_blob_repository.write().unwrap();
-        let nodes_before = remote_node_repository.len();
-        let blobs_before = remote_blob_repository.len();
-        let result = reconcile_node_repositorys(
-            &*local_node_repository,
-            &mut *remote_node_repository,
-            &*local_blob_repository,
-            &mut *remote_blob_repository,
-            &root_hash,
+    fn sync_once(&mut self, local_root_hash: Hash) {
+        let base_root = self.current_base_root();
+        let remote_root = self.remote_root_hash_hint();
+        let plan = plan_sync(base_root.as_ref(), &local_root_hash, remote_root.as_ref());
+
+        println!(
+            "Syncer plan: {:?} (B={:?}, L={}, R={:?})",
+            plan, base_root, local_root_hash, remote_root
         );
-        match result {
-            // On error the remote root was never flipped, so the remote tree is still the old, consistent one
-            // on the next watcher event will naturally retry this sync from scratch.
-            Err(err) => eprintln!("Syncer failed to reconcile: {}", err),
-            Ok(0) => {
-                println!("Syncer found no nodes to sync with remote node store.");
-                self.drive_session
-                    .set_last_synced_root(Some(root_hash.clone()));
-                if let Err(err) = self.drive_session.persist() {
-                    panic!(
-                        "Syncer failed to persist sync state after successful reconcile (fail-fast): {}",
-                        err
-                    );
+
+        match plan {
+            SyncPlan::Converged => {
+                self.persist_converged_root_or_fail_fast(local_root_hash);
+            }
+            SyncPlan::PushLocal => {
+                self.reconcile_push_with_conflict_retry(local_root_hash);
+            }
+            SyncPlan::BootstrapPull => {
+                // TODO: Implement bootstrap pull (no base B): fetch remote tree and
+                // apply it locally per policy before deciding next action.
+                // Temporary behavior keeps existing push path so current UX remains usable.
+                self.reconcile_push_with_conflict_retry(local_root_hash);
+            }
+            SyncPlan::PullRemote => {
+                // TODO: Implement remote->local pull/apply path.
+                // Temporary behavior keeps existing push path until pull pipeline exists.
+                self.reconcile_push_with_conflict_retry(local_root_hash);
+            }
+            SyncPlan::MergeDiverged => {
+                // TODO: Implement three-way merge (B/L/R) with path-level LWW policy.
+                // Temporary behavior keeps existing push path; 409 handling still retries.
+                self.reconcile_push_with_conflict_retry(local_root_hash);
+            }
+        }
+    }
+
+    fn reconcile_push_with_conflict_retry(&mut self, root_hash: Hash) {
+        let mut local_root_hash = root_hash;
+
+        for attempt in 0..=MAX_CONFLICT_RETRIES {
+            let mut should_retry_after_conflict = false;
+            let mut success = false;
+
+            {
+                let local_node_repository = self.local_node_repository.read().unwrap();
+                let mut remote_node_repository = self.remote_node_repository.write().unwrap();
+                let local_blob_repository = self.local_blob_repository.read().unwrap();
+                let mut remote_blob_repository = self.remote_blob_repository.write().unwrap();
+
+                let nodes_before = remote_node_repository.len();
+                let blobs_before = remote_blob_repository.len();
+                let result = reconcile_node_repositorys(
+                    &*local_node_repository,
+                    &mut *remote_node_repository,
+                    &*local_blob_repository,
+                    &mut *remote_blob_repository,
+                    &local_root_hash,
+                );
+
+                match result {
+                    Ok(0) => {
+                        println!("Syncer found no nodes to sync with remote node store.");
+                        success = true;
+                    }
+                    Ok(transferred) => {
+                        println!(
+                            "Syncer transferred {} nodes and {} blobs to remote (nodes {} -> {}, blobs {} -> {}).",
+                            transferred,
+                            remote_blob_repository.len() - blobs_before,
+                            nodes_before,
+                            remote_node_repository.len(),
+                            blobs_before,
+                            remote_blob_repository.len(),
+                        );
+                        success = true;
+                    }
+                    Err(SyncError::NodeRepository(NodeRepositoryError::RootConflict {
+                        actual,
+                    })) => {
+                        if attempt == MAX_CONFLICT_RETRIES {
+                            eprintln!(
+                                "Syncer failed to reconcile after {} root conflicts. Last remote root: {:?}",
+                                MAX_CONFLICT_RETRIES + 1,
+                                actual
+                            );
+                            return;
+                        }
+                        println!(
+                            "Syncer hit root conflict (attempt {}/{}), retrying full reconcile from latest local root. Remote root: {:?}",
+                            attempt + 1,
+                            MAX_CONFLICT_RETRIES + 1,
+                            actual
+                        );
+                        should_retry_after_conflict = true;
+                    }
+                    // On other errors the remote root was never flipped, so the remote tree is still the old,
+                    // consistent one; a future trigger can retry from scratch.
+                    Err(err) => {
+                        eprintln!("Syncer failed to reconcile: {}", err);
+                        return;
+                    }
+                }
+
+                if let Some(dump_dir) = &self.store_dump_dir {
+                    if let Err(err) = crate::utils::store_dump::dump_store(
+                        &*local_node_repository,
+                        &*local_blob_repository,
+                        &dump_dir.join("local_store_dump.txt"),
+                    ) {
+                        eprintln!("Syncer failed to dump local store state: {}", err);
+                    }
                 }
             }
-            Ok(transferred) => {
-                println!(
-                    "Syncer transferred {} nodes and {} blobs to remote (nodes {} -> {}, blobs {} -> {}).",
-                    transferred,
-                    remote_blob_repository.len() - blobs_before,
-                    nodes_before,
-                    remote_node_repository.len(),
-                    blobs_before,
-                    remote_blob_repository.len(),
-                );
-                self.drive_session
-                    .set_last_synced_root(Some(root_hash.clone()));
-                if let Err(err) = self.drive_session.persist() {
-                    panic!(
-                        "Syncer failed to persist sync state after successful reconcile (fail-fast): {}",
-                        err
-                    );
+
+            if success {
+                self.persist_converged_root_or_fail_fast(local_root_hash);
+                return;
+            }
+
+            if should_retry_after_conflict {
+                match self.latest_local_root_hash() {
+                    Some(latest) => local_root_hash = latest,
+                    None => {
+                        eprintln!(
+                            "Syncer cannot retry after conflict because local root is unavailable."
+                        );
+                        return;
+                    }
                 }
             }
         }
-        if let Some(dump_dir) = &self.store_dump_dir {
-            if let Err(err) = crate::utils::store_dump::dump_store(
-                &*local_node_repository,
-                &*local_blob_repository,
-                &dump_dir.join("local_store_dump.txt"),
-            ) {
-                eprintln!("Syncer failed to dump local store state: {}", err);
-            }
+    }
+
+    fn current_base_root(&self) -> Option<Hash> {
+        self.drive_session.state.last_synced_root.clone()
+    }
+
+    fn remote_root_hash_hint(&self) -> Option<Hash> {
+        // TODO: For full bidirectional correctness this should actively refresh
+        // remote root from the store before planning, rather than only using the
+        // repository's current cached view.
+        let remote_node_repository = self.remote_node_repository.read().unwrap();
+        remote_node_repository
+            .root_hash()
+            .ok()
+            .and_then(|root| root.cloned())
+    }
+
+    fn latest_local_root_hash(&self) -> Option<Hash> {
+        let local_node_repository = self.local_node_repository.read().unwrap();
+        local_node_repository
+            .root_hash()
+            .ok()
+            .and_then(|root| root.cloned())
+    }
+
+    fn persist_converged_root_or_fail_fast(&mut self, root_hash: Hash) {
+        self.drive_session.set_last_synced_root(Some(root_hash));
+        if let Err(err) = self.drive_session.persist() {
+            panic!(
+                "Syncer failed to persist sync state after successful reconcile (fail-fast): {}",
+                err
+            );
         }
     }
 }
