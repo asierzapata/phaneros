@@ -49,13 +49,7 @@ impl HttpNodeRepository {
         };
         // Best-effort seed of the expected root. If the store is unreachable or
         // has no root yet we start from None. Any subsequent 409 corrects it.
-        match repo.fetch_root() {
-            Ok(root) => repo.cached_root = root,
-            Err(err) => eprintln!(
-                "HttpNodeRepository: could not seed root from store: {}",
-                err
-            ),
-        }
+        let _ = repo.refresh_root();
         repo
     }
 
@@ -68,6 +62,16 @@ impl HttpNodeRepository {
 
     fn root_url(&self) -> String {
         format!("{}/api/drives/{}/root", self.base_url, self.drive_id)
+    }
+
+    pub fn refresh_root(&mut self) -> Result<Option<String>, NodeRepositoryError> {
+        match self.fetch_root() {
+            Ok(root) => {
+                self.cached_root = root;
+                Ok(self.cached_root.clone())
+            }
+            Err(err) => Err(err),
+        }
     }
 
     fn fetch_root(&self) -> Result<Option<Hash>, NodeRepositoryError> {

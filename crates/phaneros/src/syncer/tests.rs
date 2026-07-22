@@ -4,7 +4,7 @@ use crate::blob_repository::{Blob, BlobRef, InMemoryBlobRepository};
 use crate::node_repository::{
     Entry, Hash, InMemoryNodeRepository, Node, NodeRepository, NodeRepositoryError,
 };
-use crate::syncer::{SyncError, SyncPlan, compute_diff, plan_sync, reconcile_node_repositorys};
+use crate::syncer::{SyncError, SyncPlan, compute_diff, local_push, plan_sync};
 
 // ---- fixture helpers -------------------------------------------------------
 
@@ -89,9 +89,9 @@ mod sync_plan_spec {
 
         assert_eq!(
             plan_sync(None, &local, Some(&local)),
-            SyncPlan::BootstrapPull
+            SyncPlan::RemoteBootstrapPull
         );
-        assert_eq!(plan_sync(None, &local, None), SyncPlan::BootstrapPull);
+        assert_eq!(plan_sync(None, &local, None), SyncPlan::RemoteBootstrapPull);
     }
 
     #[test]
@@ -112,7 +112,7 @@ mod sync_plan_spec {
 
         assert_eq!(
             plan_sync(Some(&base), &base, Some(&remote)),
-            SyncPlan::PullRemote
+            SyncPlan::RemotePull
         );
     }
 
@@ -123,7 +123,7 @@ mod sync_plan_spec {
 
         assert_eq!(
             plan_sync(Some(&base), &local, Some(&base)),
-            SyncPlan::PushLocal
+            SyncPlan::LocalPush
         );
     }
 
@@ -135,7 +135,7 @@ mod sync_plan_spec {
 
         assert_eq!(
             plan_sync(Some(&base), &local, Some(&remote)),
-            SyncPlan::MergeDiverged
+            SyncPlan::Merge
         );
     }
 
@@ -144,10 +144,7 @@ mod sync_plan_spec {
         let base = hash("base");
         let local = hash("local-new");
 
-        assert_eq!(
-            plan_sync(Some(&base), &local, None),
-            SyncPlan::MergeDiverged
-        );
+        assert_eq!(plan_sync(Some(&base), &local, None), SyncPlan::Merge);
     }
 }
 
@@ -363,7 +360,7 @@ mod reconcile_spec {
 
         let mut remote = TestStore::new();
 
-        let transferred = reconcile_node_repositorys(
+        let transferred = local_push(
             &local.nodes,
             &mut remote.nodes,
             &local.blobs,
@@ -400,7 +397,7 @@ mod reconcile_spec {
         assert_ne!(old.hash, root.hash);
         remote.nodes.set_root(old.hash).unwrap();
 
-        let transferred = reconcile_node_repositorys(
+        let transferred = local_push(
             &local.nodes,
             &mut remote.nodes,
             &local.blobs,
@@ -421,7 +418,7 @@ mod reconcile_spec {
         let root_v1 = local_v1.add_folder("root", vec![], vec![file_v1.clone()]);
 
         let mut remote = TestStore::new();
-        reconcile_node_repositorys(
+        local_push(
             &local_v1.nodes,
             &mut remote.nodes,
             &local_v1.blobs,
@@ -435,7 +432,7 @@ mod reconcile_spec {
         let file_v2 = local_v2.add_file("doc.txt", b"v2");
         let root_v2 = local_v2.add_folder("root", vec![], vec![file_v2]);
 
-        reconcile_node_repositorys(
+        local_push(
             &local_v2.nodes,
             &mut remote.nodes,
             &local_v2.blobs,
@@ -472,7 +469,7 @@ mod reconcile_error_safety {
         let root = local.add_folder("root", vec![], vec![file.clone()]);
         local.blobs = InMemoryBlobRepository::new(); // sabotage: wipe the bytes
 
-        let result = reconcile_node_repositorys(
+        let result = local_push(
             &local.nodes,
             &mut remote.nodes,
             &local.blobs,
