@@ -86,6 +86,11 @@ impl Watcher {
             }
         });
 
-        Ok((watcher_rx, initial_root_hash, node_repository, blob_repository))
+        Ok((
+            watcher_rx,
+            initial_root_hash,
+            node_repository,
+            blob_repository,
+        ))
     }
 }

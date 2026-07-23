@@ -64,23 +64,28 @@ fn remote_pull_missing_source_blob_aborts_before_root_flip() {
 }
 
 #[test]
-fn merge_not_implemented_returns_error_without_mutation() {
+fn merge_missing_source_blob_aborts_before_root_flip() {
+    // Shared base.
     let mut local = TestStore::new();
-    let local_file = local.add_file("local.txt", b"local");
-    let local_root = local.add_folder("root", vec![], vec![local_file.clone()]);
+    let local_base_file = local.add_file("doc.txt", b"v1");
+    let local_base_root = local.add_folder("root", vec![], vec![local_base_file]);
+    let local_edit = local.add_file("doc.txt", b"local-v2");
+    let local_root = local.add_folder("root", vec![], vec![local_edit]);
     local.nodes.set_root(local_root.hash.clone()).unwrap();
 
     let mut remote = TestStore::new();
-    let remote_file = remote.add_file("remote.txt", b"remote");
-    let remote_root = remote.add_folder("root", vec![], vec![remote_file.clone()]);
+    let remote_base_file = remote.add_file("doc.txt", b"v1");
+    let remote_base_root = remote.add_folder("root", vec![], vec![remote_base_file]);
+    let remote_edit = remote.add_file("doc.txt", b"remote-v2");
+    let remote_root = remote.add_folder("root", vec![], vec![remote_edit]);
     remote.nodes.set_root(remote_root.hash.clone()).unwrap();
 
-    let base_root = "base-root".to_string();
+    assert_eq!(local_base_root.hash, remote_base_root.hash);
 
-    let local_nodes_before = local.nodes.len();
-    let remote_nodes_before = remote.nodes.len();
-    let local_blobs_before = local.blobs.len();
-    let remote_blobs_before = remote.blobs.len();
+    // Sabotage local blob source: local->remote leg of merge apply must fail,
+    // and roots must stay untouched.
+    local.blobs = InMemoryBlobRepository::new();
+
     let local_root_before = local.nodes.root_hash().unwrap().cloned();
     let remote_root_before = remote.nodes.root_hash().unwrap().cloned();
 
@@ -89,16 +94,12 @@ fn merge_not_implemented_returns_error_without_mutation() {
         &mut remote.nodes,
         &mut local.blobs,
         &mut remote.blobs,
-        &base_root,
+        &local_base_root.hash,
         &local_root.hash,
         &remote_root.hash,
     );
 
-    assert!(matches!(result, Err(SyncError::MergeNotImplemented)));
-    assert_eq!(local.nodes.len(), local_nodes_before);
-    assert_eq!(remote.nodes.len(), remote_nodes_before);
-    assert_eq!(local.blobs.len(), local_blobs_before);
-    assert_eq!(remote.blobs.len(), remote_blobs_before);
+    assert!(matches!(result, Err(SyncError::MissingSourceBlob { .. })));
     assert_eq!(local.nodes.root_hash().unwrap().cloned(), local_root_before);
     assert_eq!(
         remote.nodes.root_hash().unwrap().cloned(),

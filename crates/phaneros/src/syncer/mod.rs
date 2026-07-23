@@ -11,10 +11,11 @@ use crate::{
         Hash, HttpNodeRepository, InMemoryNodeRepository, NodeRepository, NodeRepositoryError,
         WritableNodeRepository,
     },
-    syncer::{diff::compute_unidirectional_diff, sync_state::DriveSession},
+    syncer::{diff::compute_unidirectional_diff, merge::merge, sync_state::DriveSession},
 };
 
 pub mod diff;
+pub mod merge;
 pub mod sync_state;
 
 #[derive(Error, Debug)]
@@ -90,6 +91,17 @@ pub fn plan_sync(
     }
 }
 
+enum Status {
+    Idle,
+    Reconciling,
+}
+
+struct SyncerStatus {
+    value: Status,
+    /// We coalesce multiple watcher events into a single reconcile, but we still want to know if the local store has changed since the last reconcile.
+    is_dirty: bool,
+}
+
 pub struct Syncer {
     watcher_rx: std::sync::mpsc::Receiver<Hash>,
     initial_root_hash: Hash,
@@ -98,6 +110,7 @@ pub struct Syncer {
     local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
     remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
     drive_session: DriveSession,
+    status: SyncerStatus,
     /// When set, the local store state is dumped to a text file in this
     /// directory after every reconcile (debug tooling, off by default).
     store_dump_dir: Option<std::path::PathBuf>,
@@ -121,6 +134,10 @@ impl Syncer {
             local_blob_repository,
             remote_blob_repository,
             drive_session,
+            status: SyncerStatus {
+                value: Status::Idle,
+                is_dirty: false,
+            },
             store_dump_dir: None,
         }
     }
@@ -145,6 +162,15 @@ impl Syncer {
     }
 
     fn sync_once(&mut self, local_root_hash: Hash) {
+        if let Status::Reconciling = self.status.value {
+            println!("Syncer is already reconciling; skipping this event.");
+            self.status.is_dirty = true;
+            return;
+        }
+
+        self.status.value = Status::Reconciling;
+        self.status.is_dirty = false;
+
         let base_root = self.current_base_root();
         let remote_root = self.get_fresh_remote_hash();
         let plan = plan_sync(base_root.as_ref(), &local_root_hash, remote_root.as_ref());
@@ -156,20 +182,27 @@ impl Syncer {
 
         match plan {
             SyncPlan::Converged => {
-                self.persist_converged_root(local_root_hash);
+                self.persist_converged_root(&local_root_hash);
             }
             SyncPlan::LocalPush => {
-                self.reconcile_with_local_push(local_root_hash);
+                self.reconcile_with_local_push(&local_root_hash);
             }
             SyncPlan::RemoteBootstrapPull => {
-                self.reconcile_with_remote_bootstrap_pull(local_root_hash);
+                self.reconcile_with_remote_bootstrap_pull(&local_root_hash);
             }
             SyncPlan::RemotePull => {
-                self.reconcile_with_remote_pull(local_root_hash);
+                self.reconcile_with_remote_pull(&local_root_hash);
             }
             SyncPlan::Merge => {
-                self.reconcile_with_merge(local_root_hash);
+                self.reconcile_with_merge(&local_root_hash);
             }
+        }
+
+        self.status.value = Status::Idle;
+        if self.status.is_dirty {
+            println!("Syncer detected new changes during reconcile; triggering another sync.");
+            self.status.is_dirty = false;
+            self.sync_once(local_root_hash.clone());
         }
     }
 
@@ -185,8 +218,9 @@ impl Syncer {
             .and_then(|root| root)
     }
 
-    fn persist_converged_root(&mut self, root_hash: Hash) {
-        self.drive_session.set_last_synced_root(Some(root_hash));
+    fn persist_converged_root(&mut self, root_hash: &Hash) {
+        self.drive_session
+            .set_last_synced_root(Some(root_hash.clone()));
         if let Err(err) = self.drive_session.persist() {
             panic!(
                 "Syncer failed to persist sync state after successful reconcile (fail-fast): {}",
@@ -195,7 +229,7 @@ impl Syncer {
         }
     }
 
-    fn reconcile_with_local_push(&mut self, root_hash: Hash) {
+    fn reconcile_with_local_push(&mut self, root_hash: &Hash) {
         let mut success = false;
 
         {
@@ -261,7 +295,7 @@ impl Syncer {
         }
     }
 
-    fn reconcile_with_remote_bootstrap_pull(&mut self, _local_root_hash: Hash) {
+    fn reconcile_with_remote_bootstrap_pull(&mut self, _local_root_hash: &Hash) {
         let Some(remote_root_hash) = self.get_fresh_remote_hash() else {
             eprintln!("Syncer cannot bootstrap pull because remote root is unavailable.");
             return;
@@ -326,11 +360,11 @@ impl Syncer {
         }
 
         if success {
-            self.persist_converged_root(remote_root_hash);
+            self.persist_converged_root(&remote_root_hash);
         }
     }
 
-    fn reconcile_with_remote_pull(&mut self, _local_root_hash: Hash) {
+    fn reconcile_with_remote_pull(&mut self, _local_root_hash: &Hash) {
         let Some(remote_root_hash) = self.get_fresh_remote_hash() else {
             eprintln!("Syncer cannot pull because remote root is unavailable.");
             return;
@@ -395,11 +429,11 @@ impl Syncer {
         }
 
         if success {
-            self.persist_converged_root(remote_root_hash);
+            self.persist_converged_root(&remote_root_hash);
         }
     }
 
-    fn reconcile_with_merge(&mut self, local_root_hash: Hash) {
+    fn reconcile_with_merge(&mut self, local_root_hash: &Hash) {
         let Some(base_root_hash) = self.current_base_root() else {
             eprintln!("Syncer cannot merge because base root is unavailable.");
             return;
@@ -491,7 +525,7 @@ impl Syncer {
         }
 
         if let Some(root_hash) = converged_root {
-            self.persist_converged_root(root_hash);
+            self.persist_converged_root(&root_hash);
         }
     }
 }
@@ -603,42 +637,6 @@ fn bootstrap_pull(
     local_node_repository.set_root(remote_root_hash.clone())?;
 
     Ok(node_transfer_set.len())
-}
-
-fn merge(
-    local_node_repository: &mut impl WritableNodeRepository,
-    remote_node_repository: &mut impl WritableNodeRepository,
-    local_blob_repository: &mut impl WritableBlobRepository,
-    remote_blob_repository: &mut impl WritableBlobRepository,
-    base_root_hash: &Hash,
-    local_root_hash: &Hash,
-    remote_root_hash: &Hash,
-) -> Result<usize, SyncError> {
-    // TODO: implement actual three-way merge strategy.
-    //
-    // How does a 3 way merge work? We need to consider the following cases for each node:
-    // 1. Node exists in base, local, and remote: If the node is the same in all three, do nothing. If it differs in local and remote, we need to decide which one to keep. We can use the root hash to determine which one is the "latest" and keep that one.
-    // 2. Node exists in base and local, but not in remote: If the node is the same in base and local, do nothing. If it differs in local, we need to keep the local version.
-    // 3. Node exists in base and remote, but not in local: If the node is the same in base and remote, do nothing. If it differs in remote, we need to keep the remote version.
-    // 4. Node exists in local and remote, but not in base: We need to decide which one to keep. We can use the root hash to determine which one is the "latest" and keep that one.
-    // 5. Node exists only in local: Keep the local version.
-    // 6. Node exists only in remote: Keep the remote version.
-    // 7. Node exists only in base: This should not happen, as it would mean that the node was deleted in both local and remote, but we can ignore it.
-    //
-    // For each node that we decide to keep, we need to ensure that its blobs are also present in the target blob repository. If a blob is missing, we need to fetch it from the source blob repository and insert it into the target blob repository.
-    //
-    // Finally, we need to set the root of the target node repository to the merged root hash, which we can compute based on the nodes that we have kept.
-    let _ = (
-        local_node_repository,
-        remote_node_repository,
-        local_blob_repository,
-        remote_blob_repository,
-        base_root_hash,
-        local_root_hash,
-        remote_root_hash,
-    );
-
-    Err(SyncError::MergeNotImplemented)
 }
 
 #[cfg(test)]
