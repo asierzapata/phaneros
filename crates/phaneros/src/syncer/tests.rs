@@ -4,7 +4,8 @@ use crate::blob_repository::{Blob, BlobRef, InMemoryBlobRepository};
 use crate::node_repository::{
     Entry, Hash, InMemoryNodeRepository, Node, NodeRepository, NodeRepositoryError,
 };
-use crate::syncer::{SyncError, SyncPlan, compute_diff, local_push, plan_sync};
+use crate::syncer::diff::compute_unidirectional_diff as compute_diff;
+use crate::syncer::{SyncError, SyncPlan, local_push, plan_sync};
 
 // ---- fixture helpers -------------------------------------------------------
 
