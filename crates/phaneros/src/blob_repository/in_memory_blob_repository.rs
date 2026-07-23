@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::blob_repository::{Blob, BlobRepository, Hash, WritableBlobRepository, repository::BlobRepositoryError};
+use crate::blob_repository::{
+    Blob, BlobRepository, Hash, WritableBlobRepository, repository::BlobRepositoryError,
+};
 
 #[derive(Debug, Default)]
 pub struct InMemoryBlobRepository {

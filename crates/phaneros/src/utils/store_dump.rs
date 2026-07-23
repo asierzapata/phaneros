@@ -49,7 +49,14 @@ fn dump_tree(
                 );
             }
             for file in files {
-                dump_tree(node_repository, blob_repository, &file.hash, &file.name, depth + 1, out);
+                dump_tree(
+                    node_repository,
+                    blob_repository,
+                    &file.hash,
+                    &file.name,
+                    depth + 1,
+                    out,
+                );
             }
         }
         Ok(Some(Node::File { blobs })) => {

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::node_repository::{Hash, Node, NodeRepository, WritableNodeRepository, repository::NodeRepositoryError};
+use crate::node_repository::{
+    Hash, Node, NodeRepository, WritableNodeRepository, repository::NodeRepositoryError,
+};
 
 #[derive(Debug, Default)]
 pub struct InMemoryNodeRepository {

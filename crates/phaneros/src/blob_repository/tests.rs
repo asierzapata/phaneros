@@ -7,13 +7,14 @@ use crate::blob_repository::{Blob, BlobRef, BlobRepository, InMemoryBlobReposito
 /// from the content, never chosen by the caller.
 fn insert_bytes(store: &mut InMemoryBlobRepository, bytes: &[u8]) -> BlobRef {
     let blob_ref = BlobRef::from_bytes(bytes);
-    store.insert(
-        blob_ref.hash.clone(),
-        Blob {
-            bytes: bytes.to_vec(),
-        },
-    )
-    .unwrap();
+    store
+        .insert(
+            blob_ref.hash.clone(),
+            Blob {
+                bytes: bytes.to_vec(),
+            },
+        )
+        .unwrap();
     blob_ref
 }
 

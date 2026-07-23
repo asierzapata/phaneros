@@ -369,8 +369,10 @@ mod file_chunking {
         let file_path = tmp.path().join("small.bin");
         fs::write(&file_path, &[0u8; 10]).unwrap();
 
-        let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
+        let chunker = FileChunker::new(
+            SMALL_CHUNK,
+            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+        );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);
@@ -383,8 +385,10 @@ mod file_chunking {
         let file_path = tmp.path().join("exact.bin");
         fs::write(&file_path, &[0u8; SMALL_CHUNK]).unwrap();
 
-        let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
+        let chunker = FileChunker::new(
+            SMALL_CHUNK,
+            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+        );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);
@@ -397,8 +401,10 @@ mod file_chunking {
         let file_path = tmp.path().join("plus_one.bin");
         fs::write(&file_path, &[0u8; SMALL_CHUNK + 1]).unwrap();
 
-        let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
+        let chunker = FileChunker::new(
+            SMALL_CHUNK,
+            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+        );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 2);
@@ -412,8 +418,10 @@ mod file_chunking {
         let file_path = tmp.path().join("double.bin");
         fs::write(&file_path, &[0u8; SMALL_CHUNK * 2]).unwrap();
 
-        let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
+        let chunker = FileChunker::new(
+            SMALL_CHUNK,
+            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+        );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 2);
@@ -429,8 +437,10 @@ mod file_chunking {
         let total_size = SMALL_CHUNK * 5 + 7;
         fs::write(&file_path, vec![0xAB; total_size]).unwrap();
 
-        let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
+        let chunker = FileChunker::new(
+            SMALL_CHUNK,
+            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+        );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 6);
@@ -450,8 +460,10 @@ mod file_chunking {
         let file_path = tmp.path().join("empty.bin");
         fs::write(&file_path, b"").unwrap();
 
-        let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
+        let chunker = FileChunker::new(
+            SMALL_CHUNK,
+            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+        );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 0);
@@ -467,8 +479,10 @@ mod file_chunking {
         fs::write(&file_a, &content).unwrap();
         fs::write(&file_b, &content).unwrap();
 
-        let chunker =
-            FileChunker::new(SMALL_CHUNK, Arc::new(RwLock::new(InMemoryBlobRepository::new())));
+        let chunker = FileChunker::new(
+            SMALL_CHUNK,
+            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+        );
         let blobs_a = chunker.chunk_file(&file_a).unwrap();
         let blobs_b = chunker.chunk_file(&file_b).unwrap();
 
