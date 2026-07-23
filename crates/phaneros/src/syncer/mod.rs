@@ -58,7 +58,11 @@ pub enum SyncPlan {
 /// - `local_root` (`L`): current local scanned root.
 /// - `remote_root` (`R`): current remote store root (`None` if never set).
 ///
-/// Policy note: when `base_root` is `None`, we always return `BootstrapPull`.
+/// Policy notes:
+///
+/// - when `base_root` is `None`, we always return `RemoteBootstrapPull`.
+/// - when `base_root` is known but `remote_root` is `None`, we recover by
+///   pushing local (`LocalPush`) so the remote can regain a visible tree.
 pub fn plan_sync(
     base_root: Option<&Hash>,
     local_root: &Hash,
@@ -70,6 +74,10 @@ pub fn plan_sync(
 
     if remote_root == Some(local_root) {
         return SyncPlan::Converged;
+    }
+
+    if remote_root.is_none() {
+        return SyncPlan::LocalPush;
     }
 
     let base_eq_local = base_root == Some(local_root);
