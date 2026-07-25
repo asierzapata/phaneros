@@ -74,6 +74,7 @@ fn main() {
         watch_handle.blob_repository,
         remote_blob_repository,
         drive_session,
+        watch_handle.rescan,
     );
 
     if let Some(dump_dir) = cli.dump_store {
