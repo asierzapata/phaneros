@@ -1,0 +1,179 @@
+use std::{
+    io::{BufRead, BufReader},
+    thread,
+    time::Duration,
+};
+
+use serde::Deserialize;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteListenerEvent {
+    pub id: i64,
+    pub drive_id: String,
+    pub root: String,
+    pub at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RootChangedPayload {
+    drive_id: String,
+    root: String,
+    at: i64,
+}
+
+const RECONNECT_BACKOFF_STEPS: [Duration; 4] = [
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+];
+
+pub fn spawn_remote_listener<F>(
+    base_url: String,
+    drive_id: String,
+    token: String,
+    mut on_event: F,
+) -> thread::JoinHandle<()>
+where
+    F: FnMut(RemoteListenerEvent) + Send + 'static,
+{
+    thread::spawn(move || {
+        let events_url = format!(
+            "{}/api/drives/{}/events",
+            base_url.trim_end_matches('/'),
+            drive_id
+        );
+        let auth = format!("Bearer {}", token);
+        let agent = ureq::Agent::new();
+        let mut last_event_id: Option<i64> = None;
+        let mut backoff_index = 0usize;
+
+        loop {
+            let mut request = agent
+                .get(&events_url)
+                .set("Authorization", &auth)
+                .set("Accept", "text/event-stream");
+
+            if let Some(id) = last_event_id {
+                request = request.set("Last-Event-ID", &id.to_string());
+            }
+
+            match request.call() {
+                Ok(response) => {
+                    backoff_index = 0;
+                    parse_event_stream(
+                        BufReader::new(response.into_reader()),
+                        &mut last_event_id,
+                        &mut on_event,
+                    );
+                    eprintln!("SSE stream disconnected; reconnecting...");
+                }
+                Err(err) => {
+                    eprintln!("SSE connect failed: {err}");
+                }
+            }
+
+            let sleep_for = RECONNECT_BACKOFF_STEPS[backoff_index];
+            if backoff_index + 1 < RECONNECT_BACKOFF_STEPS.len() {
+                backoff_index += 1;
+            }
+            thread::sleep(sleep_for);
+        }
+    })
+}
+
+pub(crate) fn parse_event_stream<R, F>(
+    mut reader: R,
+    last_event_id: &mut Option<i64>,
+    on_event: &mut F,
+) where
+    R: BufRead,
+    F: FnMut(RemoteListenerEvent),
+{
+    let mut event_type = String::new();
+    let mut event_id: Option<i64> = None;
+    let mut data_lines: Vec<String> = Vec::new();
+
+    loop {
+        let mut line = String::new();
+        let bytes = match reader.read_line(&mut line) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                eprintln!("SSE read error: {err}");
+                return;
+            }
+        };
+
+        if bytes == 0 {
+            return;
+        }
+
+        while line.ends_with('\n') || line.ends_with('\r') {
+            line.pop();
+        }
+
+        if line.is_empty() {
+            dispatch_event_frame(&event_type, event_id, &data_lines, last_event_id, on_event);
+            event_type.clear();
+            event_id = None;
+            data_lines.clear();
+            continue;
+        }
+
+        if line.starts_with(':') {
+            continue;
+        }
+
+        let (field, value) = match line.split_once(':') {
+            Some((field, value)) => (field, value.strip_prefix(' ').unwrap_or(value)),
+            None => (line.as_str(), ""),
+        };
+
+        match field {
+            "event" => {
+                event_type.clear();
+                event_type.push_str(value);
+            }
+            "id" => {
+                event_id = value.parse::<i64>().ok().filter(|id| *id >= 0);
+            }
+            "data" => data_lines.push(value.to_string()),
+            _ => {}
+        }
+    }
+}
+
+fn dispatch_event_frame<F>(
+    event_type: &str,
+    event_id: Option<i64>,
+    data_lines: &[String],
+    last_event_id: &mut Option<i64>,
+    on_event: &mut F,
+) where
+    F: FnMut(RemoteListenerEvent),
+{
+    if event_type != "root-changed" || data_lines.is_empty() {
+        return;
+    }
+
+    let Some(id) = event_id else {
+        return;
+    };
+
+    let payload_raw = data_lines.join("\n");
+    let payload: RootChangedPayload = match serde_json::from_str(&payload_raw) {
+        Ok(payload) => payload,
+        Err(err) => {
+            eprintln!("SSE payload decode failed: {err}");
+            return;
+        }
+    };
+
+    *last_event_id = Some(id);
+    on_event(RemoteListenerEvent {
+        id,
+        drive_id: payload.drive_id,
+        root: payload.root,
+        at: payload.at,
+    });
+}
