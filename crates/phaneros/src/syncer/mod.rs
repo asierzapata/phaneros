@@ -15,6 +15,7 @@ use crate::{
 };
 
 pub mod diff;
+pub mod materialize;
 pub mod merge;
 pub mod sync_state;
 
