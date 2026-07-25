@@ -1,6 +1,6 @@
 use notify::RecursiveMode;
-use notify_debouncer_full::new_debouncer;
-use std::sync::mpsc::{Receiver, channel};
+use notify_debouncer_full::{DebounceEventResult, new_debouncer};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -18,19 +18,53 @@ pub enum WatcherError {
     Scanner(#[from] crate::scanner::ScannerError),
 }
 
+#[derive(Error, Debug)]
+pub enum RescanError {
+    #[error("watcher is no longer running")]
+    WatcherStopped,
+    #[error("Scanner error: {0}")]
+    Scanner(#[from] crate::scanner::ScannerError),
+}
+
 pub struct Watcher {
     pub scanner: Scanner,
 }
 
+enum WatchEvent {
+    FsChanged,
+    Rescan(Sender<Result<Hash, crate::scanner::ScannerError>>),
+}
+
+#[derive(Clone)]
+pub struct RescanHandle {
+    events: Sender<WatchEvent>,
+}
+
+impl RescanHandle {
+    pub fn rescan(&self) -> Result<Hash, RescanError> {
+        let (reply_tx, reply_rx) = channel();
+
+        self.events
+            .send(WatchEvent::Rescan(reply_tx))
+            .map_err(|_| RescanError::WatcherStopped)?;
+
+        reply_rx
+            .recv()
+            .map_err(|_| RescanError::WatcherStopped)?
+            .map_err(RescanError::Scanner)
+    }
+}
+
 /// What `watch` hands to the caller: a receiver of root hashes (one per
-/// completed rescan), the initial root hash, and the node store the hashes
-/// resolve against.
-pub type WatchHandle = (
-    Receiver<Hash>,
-    Hash,
-    Arc<RwLock<InMemoryNodeRepository>>,
-    Arc<RwLock<InMemoryBlobRepository>>,
-);
+/// completed rescan), the initial root hash, the stores the hashes resolve
+/// against, and a handle to request a scan.
+pub struct WatchHandle {
+    pub root_hashes: Receiver<Hash>,
+    pub initial_root_hash: Hash,
+    pub node_repository: Arc<RwLock<InMemoryNodeRepository>>,
+    pub blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
+    pub rescan: RescanHandle,
+}
 
 impl Watcher {
     pub fn new(path: String) -> Self {
@@ -39,13 +73,25 @@ impl Watcher {
     }
 
     pub fn watch(mut self) -> Result<WatchHandle, WatcherError> {
-        let (notify_tx, notify_rx) = channel();
+        let (event_tx, event_rx) = channel::<WatchEvent>();
         let (watcher_tx, watcher_rx) = channel();
 
         let node_repository = self.scanner.get_store();
         let blob_repository = self.scanner.get_blob_repository().clone();
 
-        let mut debouncer = new_debouncer(Duration::from_secs(5), None, notify_tx)?;
+        let debouncer_tx = event_tx.clone();
+        let mut debouncer = new_debouncer(
+            Duration::from_secs(5),
+            None,
+            move |result: DebounceEventResult| match result {
+                Ok(_) => {
+                    let _ = debouncer_tx.send(WatchEvent::FsChanged);
+                }
+                Err(errors) => errors.iter().for_each(|error| {
+                    println!("Error: {:?}", error);
+                }),
+            },
+        )?;
 
         let path = self.scanner.get_path().to_path_buf();
         let debounce_watch_result = debouncer.watch(&path, RecursiveMode::Recursive);
@@ -69,28 +115,81 @@ impl Watcher {
             // Keep the debouncer alive for the lifetime of the watch loop.
             let _debouncer = debouncer;
 
-            for result in notify_rx {
-                match result {
-                    Ok(_) => {
+            for event in event_rx {
+                match event {
+                    WatchEvent::FsChanged => {
                         let scanner_results = self.scanner.scan();
                         // TODO: What we do with the error here? Right now we drop it
                         if let Ok(root_hash) = scanner_results {
                             println!("Folder tree updated, sending to syncer...");
-                            watcher_tx.send(root_hash).unwrap();
+                            if watcher_tx.send(root_hash).is_err() {
+                                // Nobody is syncing anymore.
+                                break;
+                            }
                         }
                     }
-                    Err(errors) => errors.iter().for_each(|error| {
-                        println!("Error: {:?}", error);
-                    }),
+                    WatchEvent::Rescan(reply) => {
+                        let _ = reply.send(self.scanner.scan());
+                    }
                 }
             }
         });
 
-        Ok((
-            watcher_rx,
+        Ok(WatchHandle {
+            root_hashes: watcher_rx,
             initial_root_hash,
             node_repository,
             blob_repository,
-        ))
+            rescan: RescanHandle { events: event_tx },
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::TempDir;
+
+    fn watch_temp_dir(path: &std::path::Path) -> WatchHandle {
+        Watcher::new(path.to_string_lossy().into_owned())
+            .watch()
+            .unwrap()
+    }
+
+    #[test]
+    fn rescan_returns_the_current_root_hash() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("hello.txt"), b"hello").unwrap();
+
+        let handle = watch_temp_dir(tmp.path());
+        let root_hash = handle.rescan.rescan().unwrap();
+
+        assert_eq!(root_hash, handle.initial_root_hash);
+    }
+
+    #[test]
+    fn rescan_picks_up_changes_made_since_the_last_scan() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("hello.txt"), b"hello").unwrap();
+
+        let handle = watch_temp_dir(tmp.path());
+        std::fs::write(tmp.path().join("other.txt"), b"other").unwrap();
+        let root_hash = handle.rescan.rescan().unwrap();
+
+        assert_ne!(root_hash, handle.initial_root_hash);
+    }
+
+    #[test]
+    fn rescan_still_works_after_the_root_hash_receiver_is_dropped() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("hello.txt"), b"hello").unwrap();
+
+        let handle = watch_temp_dir(tmp.path());
+        let rescan = handle.rescan.clone();
+        let initial_root_hash = handle.initial_root_hash.clone();
+        drop(handle.root_hashes);
+
+        assert_eq!(rescan.rescan().unwrap(), initial_root_hash);
     }
 }

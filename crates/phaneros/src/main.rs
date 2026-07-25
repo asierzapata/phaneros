@@ -52,8 +52,7 @@ fn main() {
     println!("Watcher started, waiting for changes...");
 
     // TODO: Handle the error properly instead of unwrapping.
-    let (watcher_rx, initial_root_hash, local_node_repository, local_blob_repository) =
-        watcher.watch().unwrap();
+    let watch_handle = watcher.watch().unwrap();
 
     let remote_node_repository = Arc::new(RwLock::new(HttpNodeRepository::new(
         &cli.store_url,
@@ -68,11 +67,11 @@ fn main() {
     )));
 
     let mut syncer = Syncer::new(
-        watcher_rx,
-        initial_root_hash,
-        local_node_repository,
+        watch_handle.root_hashes,
+        watch_handle.initial_root_hash,
+        watch_handle.node_repository,
         remote_node_repository,
-        local_blob_repository,
+        watch_handle.blob_repository,
         remote_blob_repository,
         drive_session,
     );
