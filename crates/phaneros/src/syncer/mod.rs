@@ -61,16 +61,22 @@ pub enum SyncPlan {
 ///
 /// Policy notes:
 ///
-/// - when `base_root` is `None`, we always return `RemoteBootstrapPull`.
-/// - when `base_root` is known but `remote_root` is `None`, we recover by
-///   pushing local (`LocalPush`) so the remote can regain a visible tree.
+/// - when `base_root` is `None` and the remote has a root, bootstrap policy
+///   applies (`RemoteBootstrapPull`).
+/// - when `remote_root` is `None` there is nothing to pull, so we push local
+///   (`LocalPush`). This covers both a first-run client against a brand new
+///   drive and a remote that lost its visible tree.
 pub fn plan_sync(
     base_root: Option<&Hash>,
     local_root: &Hash,
     remote_root: Option<&Hash>,
 ) -> SyncPlan {
     if base_root.is_none() {
-        return SyncPlan::RemoteBootstrapPull;
+        return if remote_root.is_none() {
+            SyncPlan::LocalPush
+        } else {
+            SyncPlan::RemoteBootstrapPull
+        };
     }
 
     if remote_root == Some(local_root) {

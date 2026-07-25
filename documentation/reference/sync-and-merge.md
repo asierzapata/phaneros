@@ -10,6 +10,7 @@
 
 | Condition (checked in order)     | Plan                  |
 | -------------------------------- | --------------------- |
+| `B` is `None`, `R` is `None`     | `LocalPush`           |
 | `B` is `None`                    | `RemoteBootstrapPull` |
 | `R == L`                         | `Converged`           |
 | `R` is `None`                    | `LocalPush`           |
