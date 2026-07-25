@@ -1,0 +1,31 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Build artifacts
+target
+**/target
+
+# Runtime local data
+blobs
+phaneros.db
+*.db
+**/*.db
+
+# Local/editor/system files
+.DS_Store
+.vscode
+.idea
+*.swp
+*.swo
+
+# Env / logs
+.env
+.env.*
+*.log
+**/*.log
+
+# Rust and test leftovers
+*.profraw
+*.profdata
