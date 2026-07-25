@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use thiserror::Error;
@@ -11,7 +12,12 @@ use crate::{
         Hash, HttpNodeRepository, InMemoryNodeRepository, NodeRepository, NodeRepositoryError,
         WritableNodeRepository,
     },
-    syncer::{diff::compute_unidirectional_diff, merge::merge, sync_state::DriveSession},
+    syncer::{
+        diff::compute_unidirectional_diff, materialize::materialize, merge::merge,
+        sync_state::DriveSession,
+    },
+    utils::filesystem_write::trash_batch_path,
+    watcher::RescanHandle,
 };
 
 pub mod diff;
@@ -101,6 +107,7 @@ pub fn plan_sync(
 enum Status {
     Idle,
     Reconciling,
+    Materializing,
 }
 
 struct SyncerStatus {
@@ -117,6 +124,8 @@ pub struct Syncer {
     local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
     remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
     drive_session: DriveSession,
+    rescan: RescanHandle,
+    vault_path: PathBuf,
     status: SyncerStatus,
     /// When set, the local store state is dumped to a text file in this
     /// directory after every reconcile (debug tooling, off by default).
@@ -132,7 +141,10 @@ impl Syncer {
         local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
         remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
         drive_session: DriveSession,
+        rescan: RescanHandle,
     ) -> Self {
+        let vault_path = PathBuf::from(&drive_session.state.local_path);
+
         Syncer {
             watcher_rx,
             initial_root_hash,
@@ -141,6 +153,8 @@ impl Syncer {
             local_blob_repository,
             remote_blob_repository,
             drive_session,
+            rescan,
+            vault_path,
             status: SyncerStatus {
                 value: Status::Idle,
                 is_dirty: false,
@@ -169,8 +183,8 @@ impl Syncer {
     }
 
     fn sync_once(&mut self, local_root_hash: Hash) {
-        if let Status::Reconciling = self.status.value {
-            println!("Syncer is already reconciling; skipping this event.");
+        if !matches!(self.status.value, Status::Idle) {
+            println!("Syncer is already busy; skipping this event.");
             self.status.is_dirty = true;
             return;
         }
@@ -187,29 +201,91 @@ impl Syncer {
             plan, base_root, local_root_hash, remote_root
         );
 
-        match plan {
-            SyncPlan::Converged => {
-                self.persist_converged_root(&local_root_hash);
+        let converged_root = match plan {
+            SyncPlan::Converged => Some(local_root_hash.clone()),
+            SyncPlan::LocalPush => self.reconcile_with_local_push(&local_root_hash),
+            SyncPlan::RemoteBootstrapPull => self.reconcile_with_remote_bootstrap_pull(),
+            SyncPlan::RemotePull => self.reconcile_with_remote_pull(),
+            SyncPlan::Merge => self.reconcile_with_merge(&local_root_hash),
+        };
+
+        let next_root = self.persist_and_materialize(&local_root_hash, converged_root);
+
+        self.status.value = Status::Idle;
+        self.status.is_dirty = false;
+
+        if let Some(next_root) = next_root {
+            println!("Syncer found the vault changed underneath it; syncing again.");
+            self.sync_once(next_root);
+        }
+    }
+
+    fn persist_and_materialize(
+        &mut self,
+        local_root_hash: &Hash,
+        converged_root: Option<Hash>,
+    ) -> Option<Hash> {
+        let converged_root = converged_root?;
+
+        let mut next_root = None;
+
+        if converged_root != *local_root_hash {
+            self.status.value = Status::Materializing;
+
+            if !self.materialize_converged_root(local_root_hash, &converged_root) {
+                return None;
             }
-            SyncPlan::LocalPush => {
-                self.reconcile_with_local_push(&local_root_hash);
-            }
-            SyncPlan::RemoteBootstrapPull => {
-                self.reconcile_with_remote_bootstrap_pull(&local_root_hash);
-            }
-            SyncPlan::RemotePull => {
-                self.reconcile_with_remote_pull(&local_root_hash);
-            }
-            SyncPlan::Merge => {
-                self.reconcile_with_merge(&local_root_hash);
+
+            // Hashes queued while we were writing describe either the vault
+            // before we touched it or our own writes; a scan now supersedes
+            // both, and picks up anything the user changed meanwhile.
+            while self.watcher_rx.try_recv().is_ok() {}
+
+            match self.rescan.rescan() {
+                Ok(fresh_root) if fresh_root != converged_root => next_root = Some(fresh_root),
+                Ok(_) => {}
+                Err(err) => {
+                    eprintln!("Syncer failed to rescan after materializing: {}", err);
+                }
             }
         }
 
-        self.status.value = Status::Idle;
-        if self.status.is_dirty {
-            println!("Syncer detected new changes during reconcile; triggering another sync.");
-            self.status.is_dirty = false;
-            self.sync_once(local_root_hash.clone());
+        self.persist_converged_root(&converged_root);
+
+        next_root
+    }
+
+    fn materialize_converged_root(&self, from_root: &Hash, to_root: &Hash) -> bool {
+        let local_node_repository = self.local_node_repository.read().unwrap();
+        let local_blob_repository = self.local_blob_repository.read().unwrap();
+        let trash_batch = trash_batch_path(&self.vault_path);
+
+        match materialize(
+            &*local_node_repository,
+            &*local_blob_repository,
+            &self.vault_path,
+            &trash_batch,
+            Some(from_root),
+            to_root,
+        ) {
+            Ok(stats) if stats.touched_nothing() => {
+                println!("Syncer found the vault already matching {}.", to_root);
+                true
+            }
+            Ok(stats) => {
+                println!(
+                    "Syncer materialized {} into the vault ({} files written, {} folders created, {} entries trashed).",
+                    to_root, stats.files_written, stats.folders_created, stats.entries_trashed,
+                );
+                true
+            }
+            Err(err) => {
+                eprintln!(
+                    "Syncer failed to materialize {} into the vault: {}",
+                    to_root, err
+                );
+                false
+            }
         }
     }
 
@@ -236,7 +312,7 @@ impl Syncer {
         }
     }
 
-    fn reconcile_with_local_push(&mut self, root_hash: &Hash) {
+    fn reconcile_with_local_push(&mut self, root_hash: &Hash) -> Option<Hash> {
         let mut success = false;
 
         {
@@ -282,7 +358,7 @@ impl Syncer {
                 // consistent one; a future trigger can retry from scratch.
                 Err(err) => {
                     eprintln!("Syncer failed to reconcile: {}", err);
-                    return;
+                    return None;
                 }
             }
 
@@ -297,15 +373,13 @@ impl Syncer {
             }
         }
 
-        if success {
-            self.persist_converged_root(root_hash);
-        }
+        success.then(|| root_hash.clone())
     }
 
-    fn reconcile_with_remote_bootstrap_pull(&mut self, _local_root_hash: &Hash) {
+    fn reconcile_with_remote_bootstrap_pull(&mut self) -> Option<Hash> {
         let Some(remote_root_hash) = self.get_fresh_remote_hash() else {
             eprintln!("Syncer cannot bootstrap pull because remote root is unavailable.");
-            return;
+            return None;
         };
 
         let mut success = false;
@@ -351,7 +425,7 @@ impl Syncer {
                 }
                 Err(err) => {
                     eprintln!("Syncer failed to bootstrap pull: {}", err);
-                    return;
+                    return None;
                 }
             }
 
@@ -366,15 +440,13 @@ impl Syncer {
             }
         }
 
-        if success {
-            self.persist_converged_root(&remote_root_hash);
-        }
+        success.then_some(remote_root_hash)
     }
 
-    fn reconcile_with_remote_pull(&mut self, _local_root_hash: &Hash) {
+    fn reconcile_with_remote_pull(&mut self) -> Option<Hash> {
         let Some(remote_root_hash) = self.get_fresh_remote_hash() else {
             eprintln!("Syncer cannot pull because remote root is unavailable.");
-            return;
+            return None;
         };
 
         let mut success = false;
@@ -420,7 +492,7 @@ impl Syncer {
                 }
                 Err(err) => {
                     eprintln!("Syncer failed to pull from remote: {}", err);
-                    return;
+                    return None;
                 }
             }
 
@@ -435,19 +507,17 @@ impl Syncer {
             }
         }
 
-        if success {
-            self.persist_converged_root(&remote_root_hash);
-        }
+        success.then_some(remote_root_hash)
     }
 
-    fn reconcile_with_merge(&mut self, local_root_hash: &Hash) {
+    fn reconcile_with_merge(&mut self, local_root_hash: &Hash) -> Option<Hash> {
         let Some(base_root_hash) = self.current_base_root() else {
             eprintln!("Syncer cannot merge because base root is unavailable.");
-            return;
+            return None;
         };
         let Some(remote_root_hash) = self.get_fresh_remote_hash() else {
             eprintln!("Syncer cannot merge because remote root is unavailable.");
-            return;
+            return None;
         };
 
         let mut success = false;
@@ -502,7 +572,7 @@ impl Syncer {
                 }
                 Err(err) => {
                     eprintln!("Syncer failed to merge: {}", err);
-                    return;
+                    return None;
                 }
             }
 
@@ -531,9 +601,7 @@ impl Syncer {
             }
         }
 
-        if let Some(root_hash) = converged_root {
-            self.persist_converged_root(&root_hash);
-        }
+        converged_root
     }
 }
 
