@@ -30,6 +30,18 @@ pub fn is_internal_entry(name: &str) -> bool {
     name == INTERNAL_DIR || name.ends_with(TEMP_SUFFIX)
 }
 
+pub fn trash_batch_path(vault_path: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+
+    vault_path
+        .join(INTERNAL_DIR)
+        .join("trash")
+        .join(stamp.to_string())
+}
+
 pub fn move_to_trash(path: &Path, trash_batch: &Path, rel_path: &Path) -> io::Result<PathBuf> {
     let destination = free_destination(&trash_batch.join(rel_path));
 
