@@ -6,14 +6,26 @@ fn hash(v: &str) -> Hash {
 }
 
 #[test]
-fn no_base_always_uses_bootstrap_pull_policy() {
+fn no_base_with_a_remote_root_uses_bootstrap_pull_policy() {
     let local = hash("local");
 
     assert_eq!(
         plan_sync(None, &local, Some(&local)),
         SyncPlan::RemoteBootstrapPull
     );
-    assert_eq!(plan_sync(None, &local, None), SyncPlan::RemoteBootstrapPull);
+    assert_eq!(
+        plan_sync(None, &local, Some(&hash("remote"))),
+        SyncPlan::RemoteBootstrapPull
+    );
+}
+
+#[test]
+fn no_base_and_no_remote_root_pushes_local() {
+    // First run of the first client on a brand new drive: there is nothing to
+    // bootstrap from, so local seeds the remote instead of stalling.
+    let local = hash("local");
+
+    assert_eq!(plan_sync(None, &local, None), SyncPlan::LocalPush);
 }
 
 #[test]
@@ -85,7 +97,7 @@ fn truth_table_rows_stay_stable() {
 
     let cases = vec![
         (None, &l, Some(&r), SyncPlan::RemoteBootstrapPull),
-        (None, &l, None, SyncPlan::RemoteBootstrapPull),
+        (None, &l, None, SyncPlan::LocalPush),
         (Some(&b), &l, Some(&l), SyncPlan::Converged),
         (Some(&b), &b, Some(&r), SyncPlan::RemotePull),
         (Some(&b), &l, Some(&b), SyncPlan::LocalPush),
