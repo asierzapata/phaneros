@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use phaneros_store::{
     config::Config,
@@ -6,6 +6,7 @@ use phaneros_store::{
     services::{
         blob::{BlobService, FsBlobBytesRepository, SqliteBlobMetadataRepository},
         node::{NodeService, SqliteNodeRepository},
+        sync::SyncService,
     },
     state::AppState,
 };
@@ -16,7 +17,8 @@ async fn main() {
     fmt()
         .pretty()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tower_http=debug")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=debug")),
         )
         .init();
 
@@ -33,7 +35,16 @@ async fn main() {
             Arc::new(FsBlobBytesRepository::new(config.blob_storage_path.clone())),
             config.public_url.clone(),
         ),
+        sync_service: SyncService::default(),
     };
+
+    let poller_node_service = state.node_service.clone();
+    let poller_sync_service = state.sync_service.clone();
+    tokio::spawn(async move {
+        poller_sync_service
+            .run_versions_poller(poller_node_service, Duration::from_millis(500), 500)
+            .await;
+    });
 
     let app = routers::router(state);
 

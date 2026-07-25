@@ -8,6 +8,14 @@ pub struct Version {
     pub at: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionEvent {
+    pub id: i64,
+    pub drive_id: String,
+    pub root: Hash,
+    pub at: i64,
+}
+
 #[derive(Debug, Error)]
 pub enum NodeRepositoryError {
     #[error("not implemented")]
@@ -32,7 +40,7 @@ pub trait NodeRepository {
         drive_id: &str,
         new: Hash,
         expected: Option<Hash>,
-    ) -> Result<(), NodeRepositoryError>;
+    ) -> Result<VersionEvent, NodeRepositoryError>;
 
     async fn get_node(
         &self,
@@ -48,4 +56,19 @@ pub trait NodeRepository {
     ) -> Result<(), NodeRepositoryError>;
 
     async fn list_versions(&self, drive_id: &str) -> Result<Vec<Version>, NodeRepositoryError>;
+
+    async fn max_version_id(&self) -> Result<i64, NodeRepositoryError>;
+
+    async fn list_versions_after(
+        &self,
+        after_id: i64,
+        limit: i64,
+    ) -> Result<Vec<VersionEvent>, NodeRepositoryError>;
+
+    async fn list_drive_versions_after(
+        &self,
+        drive_id: &str,
+        after_id: i64,
+        limit: i64,
+    ) -> Result<Vec<VersionEvent>, NodeRepositoryError>;
 }

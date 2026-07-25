@@ -26,6 +26,7 @@ All endpoints are mounted under `/api`.
 | ------ | ------------------------------------ | ------------- | ---------------------------------------------------- | ------------------------------- |
 | GET    | `/api/drives/{driveId}/root`         | –             | 200, JSON                                            | 404 (root never set)            |
 | GET    | `/api/drives/{driveId}/versions`     | –             | 200, JSON                                            | –                               |
+| GET    | `/api/drives/{driveId}/events`       | –             | 200, SSE stream (`text/event-stream`)                | –                               |
 | PUT    | `/api/drives/{driveId}/root`         | JSON          | 204                                                  | 409 (Compare-And-Swap mismatch) |
 | GET    | `/api/drives/{driveId}/nodes/{hash}` | –             | 200, JSON node                                       | 404                             |
 | PUT    | `/api/drives/{driveId}/nodes/{hash}` | JSON node     | 204                                                  | –                               |
@@ -129,6 +130,32 @@ Reading a version needs no other endpoint, since the client can take an old root
 
 Per-file history ("versions of `docs/thesis.md`") is derived client-side. The client should walk the version roots, resolve the path in each, and collect the distinct node hashes. This is forced by E2EE, since resolving a path means reading names, and under E2EE the store cannot do that.
 
+### SSE root-change events
+
+`GET /api/drives/{driveId}/events` is a server-sent events stream used as a **wakeup signal** only.
+
+Event frame:
+
+```text
+id: <versions.id>
+event: root-changed
+data: {"drive_id":"default","root":"abc123","at":1721920000}
+```
+
+Notes:
+
+- `id` is the durable `versions.id` value.
+- The `data` payload is informational. Correctness still comes from the sync loop fetching `/root` and reconciling as usual.
+- Keepalive comments are sent periodically to keep intermediaries from closing idle streams.
+
+Reconnect behavior:
+
+- Client reconnects with `Last-Event-ID: N` when available.
+- Server first replays events for that drive where `versions.id > N`, in ascending order.
+- Then server continues with live events.
+
+If `Last-Event-ID` is absent, only future events are streamed.
+
 ## Invariants
 
 The write ordering the client must follow is very important to maintain the store as simple as possible:
@@ -142,7 +169,6 @@ The write ordering the client must follow is very important to maintain the stor
 - **Batch negotiation**: `compute_diff` probes one hash per request, which means N round trips. The fix is a `POST .../missing` endpoint taking a hash list and returning the subset the store lacks, one per scope (`/api/drives/{driveId}/nodes/missing` and `/api/blobs/missing`).
 - **Auth**: JWT in the `Authorization` header, per main.md.
 - **E2EE**: passphrase-derived keys in the client/daemon, encrypting blob bytes and node names.
-- **Change notifications**: SSE from store to client, per main.md. v0 is push-only from the watching client.
 - **External data plane**: the ticket flow is already in the protocol, so what is deferred is the store minting URLs that point somewhere else (presigned S3/R2) and enforcing `expires_at`. v0 serves the bytes itself.
 - **Drive management**: create/list/delete drives.
 

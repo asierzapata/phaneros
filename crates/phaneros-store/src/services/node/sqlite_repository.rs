@@ -7,7 +7,7 @@ use phaneros_sync::{
 };
 use sqlx::SqlitePool;
 
-use super::repository::{NodeRepository, NodeRepositoryError, Version};
+use super::repository::{NodeRepository, NodeRepositoryError, Version, VersionEvent};
 
 pub struct SqliteNodeRepository {
     pool: SqlitePool,
@@ -42,7 +42,7 @@ impl NodeRepository for SqliteNodeRepository {
         drive_id: &str,
         new: Hash,
         expected: Option<Hash>,
-    ) -> Result<(), NodeRepositoryError> {
+    ) -> Result<VersionEvent, NodeRepositoryError> {
         let mut tx = self.pool.begin().await?;
 
         let current: Option<String> =
@@ -67,15 +67,23 @@ impl NodeRepository for SqliteNodeRepository {
         .execute(&mut *tx)
         .await?;
 
-        sqlx::query("INSERT INTO versions (drive_id, root_hash, at) VALUES (?, ?, ?)")
-            .bind(drive_id)
-            .bind(&new)
-            .bind(now_unix())
-            .execute(&mut *tx)
-            .await?;
+        let at = now_unix();
+        let inserted =
+            sqlx::query("INSERT INTO versions (drive_id, root_hash, at) VALUES (?, ?, ?)")
+                .bind(drive_id)
+                .bind(&new)
+                .bind(at)
+                .execute(&mut *tx)
+                .await?;
 
         tx.commit().await?;
-        Ok(())
+
+        Ok(VersionEvent {
+            id: inserted.last_insert_rowid(),
+            drive_id: drive_id.to_string(),
+            root: new,
+            at,
+        })
     }
 
     async fn get_node(
@@ -129,6 +137,71 @@ impl NodeRepository for SqliteNodeRepository {
         Ok(rows
             .into_iter()
             .map(|(root, at)| Version { root, at })
+            .collect())
+    }
+
+    async fn max_version_id(&self) -> Result<i64, NodeRepositoryError> {
+        let max: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM versions")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(max)
+    }
+
+    async fn list_versions_after(
+        &self,
+        after_id: i64,
+        limit: i64,
+    ) -> Result<Vec<VersionEvent>, NodeRepositoryError> {
+        let rows: Vec<(i64, String, String, i64)> = sqlx::query_as(
+            "SELECT id, drive_id, root_hash, at
+             FROM versions
+             WHERE id > ?
+             ORDER BY id ASC
+             LIMIT ?",
+        )
+        .bind(after_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, drive_id, root, at)| VersionEvent {
+                id,
+                drive_id,
+                root,
+                at,
+            })
+            .collect())
+    }
+
+    async fn list_drive_versions_after(
+        &self,
+        drive_id: &str,
+        after_id: i64,
+        limit: i64,
+    ) -> Result<Vec<VersionEvent>, NodeRepositoryError> {
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(
+            "SELECT id, root_hash, at
+             FROM versions
+             WHERE drive_id = ? AND id > ?
+             ORDER BY id ASC
+             LIMIT ?",
+        )
+        .bind(drive_id)
+        .bind(after_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, root, at)| VersionEvent {
+                id,
+                drive_id: drive_id.to_string(),
+                root,
+                at,
+            })
             .collect())
     }
 }
@@ -224,5 +297,56 @@ mod tests {
         let versions = repo.list_versions("drive").await.unwrap();
         let roots: Vec<&str> = versions.iter().map(|v| v.root.as_str()).collect();
         assert_eq!(roots, vec!["root2", "root1"]);
+    }
+
+    #[tokio::test]
+    async fn put_root_returns_version_event_metadata() {
+        let repo = repo().await;
+
+        let version = repo.put_root("drive", "root1".into(), None).await.unwrap();
+
+        assert_eq!(version.id, 1);
+        assert_eq!(version.drive_id, "drive");
+        assert_eq!(version.root, "root1");
+        assert!(version.at > 0);
+    }
+
+    #[tokio::test]
+    async fn list_versions_after_and_drive_versions_after_are_ordered_and_scoped() {
+        let repo = repo().await;
+
+        let drive_a_v1 = repo.put_root("drive-a", "a1".into(), None).await.unwrap();
+        let drive_b_v1 = repo.put_root("drive-b", "b1".into(), None).await.unwrap();
+        let drive_a_v2 = repo
+            .put_root("drive-a", "a2".into(), Some("a1".into()))
+            .await
+            .unwrap();
+
+        assert_eq!(repo.max_version_id().await.unwrap(), drive_a_v2.id);
+
+        let global = repo.list_versions_after(0, 10).await.unwrap();
+        let global_roots: Vec<&str> = global.iter().map(|v| v.root.as_str()).collect();
+        assert_eq!(
+            global_roots,
+            vec![
+                drive_a_v1.root.as_str(),
+                drive_b_v1.root.as_str(),
+                drive_a_v2.root.as_str()
+            ]
+        );
+
+        let drive_a = repo
+            .list_drive_versions_after("drive-a", 0, 10)
+            .await
+            .unwrap();
+        let drive_a_roots: Vec<&str> = drive_a.iter().map(|v| v.root.as_str()).collect();
+        assert_eq!(drive_a_roots, vec!["a1", "a2"]);
+
+        let after_first_drive_a = repo
+            .list_drive_versions_after("drive-a", drive_a_v1.id, 10)
+            .await
+            .unwrap();
+        assert_eq!(after_first_drive_a.len(), 1);
+        assert_eq!(after_first_drive_a[0].id, drive_a_v2.id);
     }
 }

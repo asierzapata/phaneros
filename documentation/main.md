@@ -50,4 +50,4 @@ Deleting history is two separate operations. First, version records are pruned a
 
 The control plane will expose a REST API that the client will use to communicate with the store. The API will be secured with JWT tokens and will require authentication for all requests. The concrete endpoints, wire formats, and status code semantics are specified in [sync-protocol.md](sync-protocol.md).
 
-From the store to the client communication, we will use SSE to notify the client of changes.
+From store to client communication we now use SSE on `GET /api/drives/{driveId}/events`, backed by the SQLite `versions` table as a durable outbox. Each accepted root flip appends one `versions` row and emits a `root-changed` event (`id = versions.id`). The client treats this as a wakeup signal and runs the normal reconcile flow (`GET /root` + merge/push/pull rules), rather than trusting SSE payloads as authoritative sync state.

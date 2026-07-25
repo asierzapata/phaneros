@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use phaneros_sync::{hash::Hash, node::Node};
 
-use super::repository::{NodeRepository, NodeRepositoryError, Version};
+use super::repository::{NodeRepository, NodeRepositoryError, Version, VersionEvent};
 
 /// Placeholder until a real repository (SQLite) exists. Every method errors,
 /// so routes wired against it behave the same as the hardcoded 501 stubs did.
@@ -19,7 +19,7 @@ impl NodeRepository for UnimplementedNodeRepository {
         _drive_id: &str,
         _new: Hash,
         _expected: Option<Hash>,
-    ) -> Result<(), NodeRepositoryError> {
+    ) -> Result<VersionEvent, NodeRepositoryError> {
         Err(NodeRepositoryError::NotImplemented)
     }
 
@@ -41,6 +41,27 @@ impl NodeRepository for UnimplementedNodeRepository {
     }
 
     async fn list_versions(&self, _drive_id: &str) -> Result<Vec<Version>, NodeRepositoryError> {
+        Err(NodeRepositoryError::NotImplemented)
+    }
+
+    async fn max_version_id(&self) -> Result<i64, NodeRepositoryError> {
+        Err(NodeRepositoryError::NotImplemented)
+    }
+
+    async fn list_versions_after(
+        &self,
+        _after_id: i64,
+        _limit: i64,
+    ) -> Result<Vec<VersionEvent>, NodeRepositoryError> {
+        Err(NodeRepositoryError::NotImplemented)
+    }
+
+    async fn list_drive_versions_after(
+        &self,
+        _drive_id: &str,
+        _after_id: i64,
+        _limit: i64,
+    ) -> Result<Vec<VersionEvent>, NodeRepositoryError> {
         Err(NodeRepositoryError::NotImplemented)
     }
 }

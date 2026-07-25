@@ -46,10 +46,7 @@ impl BlobMetadataRepository for SqliteBlobMetadataRepository {
         Ok(())
     }
 
-    async fn declared_size(
-        &self,
-        hash: &Hash,
-    ) -> Result<Option<i64>, BlobMetadataRepositoryError> {
+    async fn declared_size(&self, hash: &Hash) -> Result<Option<i64>, BlobMetadataRepositoryError> {
         let size: Option<i64> = sqlx::query_scalar("SELECT size FROM blob_metadata WHERE hash = ?")
             .bind(hash)
             .fetch_optional(&self.pool)
@@ -102,9 +99,6 @@ mod tests {
     #[tokio::test]
     async fn declared_size_is_none_for_unknown_blob() {
         let repo = repo().await;
-        assert_eq!(
-            repo.declared_size(&"missing".into()).await.unwrap(),
-            None
-        );
+        assert_eq!(repo.declared_size(&"missing".into()).await.unwrap(), None);
     }
 }
