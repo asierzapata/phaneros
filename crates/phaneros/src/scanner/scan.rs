@@ -8,7 +8,8 @@ use thiserror::Error;
 
 use crate::blob_repository::InMemoryBlobRepository;
 use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository};
-use crate::scanner::file_chunker::{FileChunker, FileChunkerError};
+use crate::scanner::file_chunker::{DEFAULT_CHUNK_SIZE, FileChunker, FileChunkerError};
+use crate::utils::filesystem_write::is_internal_entry;
 use crate::utils::observer::Publisher;
 
 #[derive(Debug)]
@@ -180,7 +181,7 @@ impl Scanner {
             status: ScannerStatus::Idle,
             publisher: Publisher::new(),
             file_chunker: FileChunker::new(
-                1024 * 1024, // 1 MB chunk size
+                DEFAULT_CHUNK_SIZE,
                 Arc::new(RwLock::new(InMemoryBlobRepository::new())),
             ),
             snapshot_buffer_size: 10,
@@ -373,6 +374,11 @@ impl Scanner {
                     path: path.display().to_string(),
                     source: e,
                 })?;
+
+        let entries: Vec<_> = entries
+            .into_iter()
+            .filter(|entry| !is_internal_entry(&entry.file_name().to_string_lossy()))
+            .collect();
 
         let scanned_entries = entries
             .par_iter()
