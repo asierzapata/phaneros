@@ -1,6 +1,8 @@
 use fs2::FileExt;
 use phaneros_sync::hash::Hash;
 
+use crate::utils::filesystem_write::write_atomic;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SyncState {
     pub schema_version: u32, // always 1 for now
@@ -109,11 +111,7 @@ impl DriveSession {
     }
     pub fn persist(&self) -> Result<(), SyncStateError> {
         let data = serde_json::to_vec_pretty(&self.state)?;
-        std::fs::create_dir_all(self.state_path.parent().unwrap())?;
-        // we do a write to a temp file and then rename to avoid partial writes
-        let temp_path = self.state_path.with_extension("json.tmp");
-        std::fs::write(&temp_path, data)?;
-        std::fs::rename(temp_path, &self.state_path)?;
+        write_atomic(&self.state_path, &data)?;
         Ok(())
     }
 
