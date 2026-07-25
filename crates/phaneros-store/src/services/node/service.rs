@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use phaneros_sync::{hash::Hash, node::Node};
 
-use super::repository::{NodeRepository, NodeRepositoryError, Version};
+use super::repository::{NodeRepository, NodeRepositoryError, Version, VersionEvent};
 
 #[derive(Clone)]
 pub struct NodeService {
@@ -23,7 +23,7 @@ impl NodeService {
         drive_id: &str,
         new: Hash,
         expected: Option<Hash>,
-    ) -> Result<(), NodeRepositoryError> {
+    ) -> Result<VersionEvent, NodeRepositoryError> {
         self.repository.put_root(drive_id, new, expected).await
     }
 
@@ -46,5 +46,28 @@ impl NodeService {
 
     pub async fn list_versions(&self, drive_id: &str) -> Result<Vec<Version>, NodeRepositoryError> {
         self.repository.list_versions(drive_id).await
+    }
+
+    pub async fn max_version_id(&self) -> Result<i64, NodeRepositoryError> {
+        self.repository.max_version_id().await
+    }
+
+    pub async fn list_versions_after(
+        &self,
+        after_id: i64,
+        limit: i64,
+    ) -> Result<Vec<VersionEvent>, NodeRepositoryError> {
+        self.repository.list_versions_after(after_id, limit).await
+    }
+
+    pub async fn list_drive_versions_after(
+        &self,
+        drive_id: &str,
+        after_id: i64,
+        limit: i64,
+    ) -> Result<Vec<VersionEvent>, NodeRepositoryError> {
+        self.repository
+            .list_drive_versions_after(drive_id, after_id, limit)
+            .await
     }
 }

@@ -25,7 +25,10 @@ pub async fn put_root(
 ) -> Response {
     let PutRootRequestBody { hash, expected } = body;
     match state.node_service.put_root(&drive_id, hash, expected).await {
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Ok(version) => {
+            state.sync_service.publish_version(version);
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(RootMismatch {
             expected: _,
             actual,
