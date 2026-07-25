@@ -1567,3 +1567,124 @@ mod cache_correctness {
         assert_eq!(tree1.files[0].hash, tree2.files[0].hash);
     }
 }
+
+mod internal_entries {
+    use super::*;
+
+    #[test]
+    fn phaneros_state_directory_is_not_part_of_the_tree() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("vault");
+        fs::create_dir(&root).unwrap();
+        create_file(&root, "hello.txt", b"hello");
+        let trash = create_dir(&root, ".phaneros");
+        create_file(&trash, "deleted.txt", b"deleted");
+
+        let mut scanner = new_scanner(&root);
+        let tree = scan_view(&mut scanner).unwrap();
+
+        assert_eq!(tree.folders.len(), 0);
+        assert_eq!(
+            tree.files
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["hello.txt"]
+        );
+    }
+
+    #[test]
+    fn in_progress_writes_are_not_part_of_the_tree() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("vault");
+        fs::create_dir(&root).unwrap();
+        create_file(&root, "hello.txt", b"hello");
+        // Left behind by a crashed write.
+        create_file(&root, "hello.txt.phaneros-tmp", b"half writ");
+
+        let mut scanner = new_scanner(&root);
+        let tree = scan_view(&mut scanner).unwrap();
+
+        assert_eq!(
+            tree.files
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["hello.txt"]
+        );
+    }
+
+    #[test]
+    fn internal_entries_do_not_change_the_root_hash() {
+        let tmp = TempDir::new().unwrap();
+
+        let clean = tmp.path().join("clean");
+        fs::create_dir(&clean).unwrap();
+        create_file(&clean, "hello.txt", b"hello");
+
+        let with_internals = tmp.path().join("with_internals");
+        fs::create_dir(&with_internals).unwrap();
+        create_file(&with_internals, "hello.txt", b"hello");
+        create_file(&with_internals, "hello.txt.phaneros-tmp", b"half writ");
+        let internal_dir = create_dir(&with_internals, ".phaneros");
+        create_file(&internal_dir, "deleted.txt", b"deleted");
+
+        let clean_hash = scan_view(&mut new_scanner(&clean)).unwrap().root_hash;
+        let with_internals_hash = scan_view(&mut new_scanner(&with_internals))
+            .unwrap()
+            .root_hash;
+
+        assert_eq!(clean_hash, with_internals_hash);
+    }
+}
+
+mod file_hashing {
+    use super::*;
+
+    use crate::scanner::file_chunker::{DEFAULT_CHUNK_SIZE, file_node_hash};
+
+    #[test]
+    fn file_node_hash_matches_what_the_scanner_recorded() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("vault");
+        fs::create_dir(&root).unwrap();
+        create_file(&root, "hello.txt", b"hello from A");
+
+        let tree = scan_view(&mut new_scanner(&root)).unwrap();
+        let hashed = file_node_hash(&root.join("hello.txt"), DEFAULT_CHUNK_SIZE).unwrap();
+
+        assert_eq!(hashed, tree.files[0].hash);
+    }
+
+    #[test]
+    fn file_node_hash_changes_with_content_and_stores_no_blobs() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("hello.txt");
+
+        fs::write(&path, b"before").unwrap();
+        let before = file_node_hash(&path, DEFAULT_CHUNK_SIZE).unwrap();
+
+        fs::write(&path, b"after").unwrap();
+        let after = file_node_hash(&path, DEFAULT_CHUNK_SIZE).unwrap();
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn file_node_hash_spans_every_chunk() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("big.bin");
+        const CHUNK: usize = 16;
+
+        let mut content = vec![b'a'; CHUNK * 2];
+        fs::write(&path, &content).unwrap();
+        let before = file_node_hash(&path, CHUNK).unwrap();
+
+        // Only the last chunk differs.
+        content[CHUNK + 1] = b'b';
+        fs::write(&path, &content).unwrap();
+        let after = file_node_hash(&path, CHUNK).unwrap();
+
+        assert_ne!(before, after);
+    }
+}
