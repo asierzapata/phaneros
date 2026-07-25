@@ -20,14 +20,15 @@ COPY --from=planner /app/recipe.json /app/recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo chef cook --release --recipe-path recipe.json
+    cargo chef cook --release --recipe-path recipe.json --package phaneros-store
 
 COPY . .
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo build -p phaneros-store --release
+    cargo build -p phaneros-store --release \
+    && cp /app/target/release/phaneros-store /app/phaneros-store
 
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS runtime
 
@@ -37,7 +38,7 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/phaneros-store /usr/local/bin/phaneros-store
+COPY --from=builder /app/phaneros-store /usr/local/bin/phaneros-store
 
 RUN mkdir -p /data/blobs
 
