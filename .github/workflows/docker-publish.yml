@@ -3,6 +3,13 @@ name: Publish Docker image
 on:
   push:
     branches: [main]
+    paths:
+      - "crates/phaneros-store/**"
+      - "crates/phaneros-sync/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".dockerignore"
+      - ".github/workflows/docker-publish.yml"
     tags: ["v*"]
   workflow_dispatch:
 
