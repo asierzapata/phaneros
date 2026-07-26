@@ -1,0 +1,736 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		597C3A0F3016187100902F93 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = F10000020000000200000002 /* ComposableArchitecture */; };
+		597C3A103016187100902F93 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = F10000030000000300000003 /* ComposableArchitecture */; };
+		789C0A70000000700000007 /* CasePaths in Frameworks */ = {isa = PBXBuildFile; productRef = 789C0A30000000300000003 /* CasePaths */; };
+		789C0A80000000800000008 /* Perception in Frameworks */ = {isa = PBXBuildFile; productRef = 789C0A40000000400000004 /* Perception */; };
+		789C0A90000000900000009 /* CasePaths in Frameworks */ = {isa = PBXBuildFile; productRef = 789C0A50000000500000005 /* CasePaths */; };
+		789C0AA0000000A0000000A /* Perception in Frameworks */ = {isa = PBXBuildFile; productRef = 789C0A60000000600000006 /* Perception */; };
+		789C0AB0000000B0000000B /* PerceptionCore in Frameworks */ = {isa = PBXBuildFile; productRef = 789C0A410000004100000041 /* PerceptionCore */; };
+		789C0AC0000000C0000000C /* PerceptionCore in Frameworks */ = {isa = PBXBuildFile; productRef = 789C0A610000006100000061 /* PerceptionCore */; };
+		F10004040000000500000005 /* Clocks in Frameworks */ = {isa = PBXBuildFile; productRef = F10004040000000300000003 /* Clocks */; };
+		F10004040000000700000007 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = F10004040000000800000008 /* Dependencies */; };
+		F10004040000000600000006 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = F10004040000000400000004 /* Dependencies */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		597C39B1301572FB00902F93 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 597C3999301572F900902F93 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 597C39A0301572F900902F93;
+			remoteInfo = phaneros;
+		};
+		597C39BB301572FB00902F93 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 597C3999301572F900902F93 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 597C39A0301572F900902F93;
+			remoteInfo = phaneros;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		597C39A1301572F900902F93 /* phaneros.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = phaneros.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		597C39B0301572FB00902F93 /* phanerosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = phanerosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		597C39BA301572FB00902F93 /* phanerosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = phanerosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		597C39A3301572F900902F93 /* phaneros */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = phaneros;
+			sourceTree = "<group>";
+		};
+		597C39B3301572FB00902F93 /* phanerosTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = phanerosTests;
+			sourceTree = "<group>";
+		};
+		597C39BD301572FB00902F93 /* phanerosUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = phanerosUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		597C399E301572F900902F93 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				597C3A0F3016187100902F93 /* ComposableArchitecture in Frameworks */,
+				789C0A70000000700000007 /* CasePaths in Frameworks */,
+				789C0A80000000800000008 /* Perception in Frameworks */,
+				789C0AB0000000B0000000B /* PerceptionCore in Frameworks */,
+				F10004040000000700000007 /* Dependencies in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		597C39AD301572FB00902F93 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				597C3A103016187100902F93 /* ComposableArchitecture in Frameworks */,
+				789C0A90000000900000009 /* CasePaths in Frameworks */,
+				789C0AA0000000A0000000A /* Perception in Frameworks */,
+				789C0AC0000000C0000000C /* PerceptionCore in Frameworks */,
+				F10004040000000500000005 /* Clocks in Frameworks */,
+				F10004040000000600000006 /* Dependencies in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		597C39B7301572FB00902F93 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		597C3998301572F900902F93 = {
+			isa = PBXGroup;
+			children = (
+				597C39A3301572F900902F93 /* phaneros */,
+				597C39B3301572FB00902F93 /* phanerosTests */,
+				597C39BD301572FB00902F93 /* phanerosUITests */,
+				597C39A2301572F900902F93 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		597C39A2301572F900902F93 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				597C39A1301572F900902F93 /* phaneros.app */,
+				597C39B0301572FB00902F93 /* phanerosTests.xctest */,
+				597C39BA301572FB00902F93 /* phanerosUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		597C39A0301572F900902F93 /* phaneros */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 597C39C4301572FB00902F93 /* Build configuration list for PBXNativeTarget "phaneros" */;
+			buildPhases = (
+				597C399D301572F900902F93 /* Sources */,
+				597C399E301572F900902F93 /* Frameworks */,
+				597C399F301572F900902F93 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				597C39A3301572F900902F93 /* phaneros */,
+			);
+			name = phaneros;
+			packageProductDependencies = (
+				F10000020000000200000002 /* ComposableArchitecture */,
+				789C0A30000000300000003 /* CasePaths */,
+				789C0A40000000400000004 /* Perception */,
+				789C0A410000004100000041 /* PerceptionCore */,
+				F10004040000000800000008 /* Dependencies */,
+			);
+			productName = phaneros;
+			productReference = 597C39A1301572F900902F93 /* phaneros.app */;
+			productType = "com.apple.product-type.application";
+		};
+		597C39AF301572FB00902F93 /* phanerosTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 597C39C7301572FB00902F93 /* Build configuration list for PBXNativeTarget "phanerosTests" */;
+			buildPhases = (
+				597C39AC301572FB00902F93 /* Sources */,
+				597C39AD301572FB00902F93 /* Frameworks */,
+				597C39AE301572FB00902F93 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				597C39B2301572FB00902F93 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				597C39B3301572FB00902F93 /* phanerosTests */,
+			);
+			name = phanerosTests;
+			packageProductDependencies = (
+				F10000030000000300000003 /* ComposableArchitecture */,
+				789C0A50000000500000005 /* CasePaths */,
+				789C0A60000000600000006 /* Perception */,
+				789C0A610000006100000061 /* PerceptionCore */,
+				F10004040000000300000003 /* Clocks */,
+				F10004040000000400000004 /* Dependencies */,
+			);
+			productName = phanerosTests;
+			productReference = 597C39B0301572FB00902F93 /* phanerosTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		597C39B9301572FB00902F93 /* phanerosUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 597C39CA301572FB00902F93 /* Build configuration list for PBXNativeTarget "phanerosUITests" */;
+			buildPhases = (
+				597C39B6301572FB00902F93 /* Sources */,
+				597C39B7301572FB00902F93 /* Frameworks */,
+				597C39B8301572FB00902F93 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				597C39BC301572FB00902F93 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				597C39BD301572FB00902F93 /* phanerosUITests */,
+			);
+			name = phanerosUITests;
+			packageProductDependencies = (
+			);
+			productName = phanerosUITests;
+			productReference = 597C39BA301572FB00902F93 /* phanerosUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		597C3999301572F900902F93 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					597C39A0301572F900902F93 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					597C39AF301572FB00902F93 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 597C39A0301572F900902F93;
+					};
+					597C39B9301572FB00902F93 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 597C39A0301572F900902F93;
+					};
+				};
+			};
+			buildConfigurationList = 597C399C301572F900902F93 /* Build configuration list for PBXProject "phaneros" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 597C3998301572F900902F93;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F10000010000000100000001 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
+				789C0A10000000100000001 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
+				789C0A20000000200000002 /* XCRemoteSwiftPackageReference "swift-perception" */,
+				F10004040000000100000001 /* XCRemoteSwiftPackageReference "swift-clocks" */,
+				F10004040000000200000002 /* XCRemoteSwiftPackageReference "swift-dependencies" */,
+				F10004040000000900000009 /* XCRemoteSwiftPackageReference "swift-syntax" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 597C39A2301572F900902F93 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				597C39A0301572F900902F93 /* phaneros */,
+				597C39AF301572FB00902F93 /* phanerosTests */,
+				597C39B9301572FB00902F93 /* phanerosUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		597C399F301572F900902F93 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		597C39AE301572FB00902F93 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		597C39B8301572FB00902F93 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		597C399D301572F900902F93 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		597C39AC301572FB00902F93 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		597C39B6301572FB00902F93 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		597C39B2301572FB00902F93 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 597C39A0301572F900902F93 /* phaneros */;
+			targetProxy = 597C39B1301572FB00902F93 /* PBXContainerItemProxy */;
+		};
+		597C39BC301572FB00902F93 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 597C39A0301572F900902F93 /* phaneros */;
+			targetProxy = 597C39BB301572FB00902F93 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		597C39C2301572FB00902F93 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 2QW8H3B548;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		597C39C3301572FB00902F93 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 2QW8H3B548;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		597C39C5301572FB00902F93 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2QW8H3B548;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.asierzapata.phaneros;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		597C39C6301572FB00902F93 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2QW8H3B548;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.asierzapata.phaneros;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		597C39C8301572FB00902F93 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2QW8H3B548;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.asierzapata.phanerosTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/phaneros.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/phaneros";
+			};
+			name = Debug;
+		};
+		597C39C9301572FB00902F93 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2QW8H3B548;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.asierzapata.phanerosTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/phaneros.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/phaneros";
+			};
+			name = Release;
+		};
+		597C39CB301572FB00902F93 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2QW8H3B548;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.asierzapata.phanerosUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = phaneros;
+			};
+			name = Debug;
+		};
+		597C39CC301572FB00902F93 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2QW8H3B548;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.asierzapata.phanerosUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = phaneros;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		597C399C301572F900902F93 /* Build configuration list for PBXProject "phaneros" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				597C39C2301572FB00902F93 /* Debug */,
+				597C39C3301572FB00902F93 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		597C39C4301572FB00902F93 /* Build configuration list for PBXNativeTarget "phaneros" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				597C39C5301572FB00902F93 /* Debug */,
+				597C39C6301572FB00902F93 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		597C39C7301572FB00902F93 /* Build configuration list for PBXNativeTarget "phanerosTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				597C39C8301572FB00902F93 /* Debug */,
+				597C39C9301572FB00902F93 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		597C39CA301572FB00902F93 /* Build configuration list for PBXNativeTarget "phanerosUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				597C39CB301572FB00902F93 /* Debug */,
+				597C39CC301572FB00902F93 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		789C0A10000000100000001 /* XCRemoteSwiftPackageReference "swift-case-paths" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-case-paths";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.9.0;
+			};
+		};
+		789C0A20000000200000002 /* XCRemoteSwiftPackageReference "swift-perception" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-perception";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+		F10000010000000100000001 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-composable-architecture";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.17.0;
+			};
+		};
+		F10004040000000100000001 /* XCRemoteSwiftPackageReference "swift-clocks" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-clocks";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.0;
+			};
+		};
+		F10004040000000900000009 /* XCRemoteSwiftPackageReference "swift-syntax" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-syntax";
+			requirement = {
+				kind = versionRange;
+				maximumVersion = 602.0.0;
+				minimumVersion = 601.0.1;
+			};
+		};
+		F10004040000000200000002 /* XCRemoteSwiftPackageReference "swift-dependencies" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-dependencies";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.12.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		789C0A30000000300000003 /* CasePaths */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 789C0A10000000100000001 /* XCRemoteSwiftPackageReference "swift-case-paths" */;
+			productName = CasePaths;
+		};
+		789C0A40000000400000004 /* Perception */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 789C0A20000000200000002 /* XCRemoteSwiftPackageReference "swift-perception" */;
+			productName = Perception;
+		};
+		789C0A410000004100000041 /* PerceptionCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 789C0A20000000200000002 /* XCRemoteSwiftPackageReference "swift-perception" */;
+			productName = PerceptionCore;
+		};
+		789C0A50000000500000005 /* CasePaths */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 789C0A10000000100000001 /* XCRemoteSwiftPackageReference "swift-case-paths" */;
+			productName = CasePaths;
+		};
+		789C0A60000000600000006 /* Perception */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 789C0A20000000200000002 /* XCRemoteSwiftPackageReference "swift-perception" */;
+			productName = Perception;
+		};
+		789C0A610000006100000061 /* PerceptionCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 789C0A20000000200000002 /* XCRemoteSwiftPackageReference "swift-perception" */;
+			productName = PerceptionCore;
+		};
+		F10000020000000200000002 /* ComposableArchitecture */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F10000010000000100000001 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */;
+			productName = ComposableArchitecture;
+		};
+		F10000030000000300000003 /* ComposableArchitecture */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F10000010000000100000001 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */;
+			productName = ComposableArchitecture;
+		};
+		F10004040000000300000003 /* Clocks */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F10004040000000100000001 /* XCRemoteSwiftPackageReference "swift-clocks" */;
+			productName = Clocks;
+		};
+		F10004040000000400000004 /* Dependencies */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F10004040000000200000002 /* XCRemoteSwiftPackageReference "swift-dependencies" */;
+			productName = Dependencies;
+		};
+		F10004040000000800000008 /* Dependencies */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F10004040000000200000002 /* XCRemoteSwiftPackageReference "swift-dependencies" */;
+			productName = Dependencies;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 597C3999301572F900902F93 /* Project object */;
+}
