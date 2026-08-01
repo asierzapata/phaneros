@@ -15,18 +15,19 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
+ARG TARGETPLATFORM
 COPY --from=planner /app/recipe.json /app/recipe.json
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/target \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+    --mount=type=cache,target=/app/target,id=cargo-target-${TARGETPLATFORM} \
     cargo chef cook --release --recipe-path recipe.json --package phaneros-store
 
 COPY . .
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/target \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+    --mount=type=cache,target=/app/target,id=cargo-target-${TARGETPLATFORM} \
     cargo build -p phaneros-store --release \
     && cp /app/target/release/phaneros-store /app/phaneros-store
 
