@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::blob_repository::InMemoryBlobRepository;
 use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository};
 use crate::scanner::file_chunker::{DEFAULT_CHUNK_SIZE, FileChunker, FileChunkerError};
-use crate::utils::filesystem_write::is_internal_entry;
+use crate::scanner::ignore::IgnoreFilter;
 use crate::utils::observer::Publisher;
 
 #[derive(Debug)]
@@ -171,12 +171,15 @@ pub struct Scanner {
     current_snapshot: Option<ScanSnapshot>,
     scan_snapshots: VecDeque<ScanSnapshot>,
     node_repository: Arc<RwLock<InMemoryNodeRepository>>,
+    ignore_filter: IgnoreFilter,
 }
 
 impl Scanner {
     pub fn new(file_path: impl Into<PathBuf>, should_show_progress: bool) -> Scanner {
+        let path = file_path.into();
+        let ignore_filter = IgnoreFilter::new(&path);
         Scanner {
-            file_path: file_path.into(),
+            file_path: path,
             should_show_progress,
             status: ScannerStatus::Idle,
             publisher: Publisher::new(),
@@ -188,6 +191,7 @@ impl Scanner {
             current_snapshot: None,
             scan_snapshots: VecDeque::new(),
             node_repository: Arc::new(RwLock::new(InMemoryNodeRepository::new())),
+            ignore_filter,
         }
     }
 
@@ -360,8 +364,6 @@ impl Scanner {
     }
 
     fn scan_directory(&self, path: &Path) -> Result<ScannedFolder, ScannerError> {
-        // TODO: Integrate the `ignore` crate to respect .gitignore rules and skip
-        // directories like .git/, node_modules/, target/
         let read_dir = fs::read_dir(path).map_err(|e| ScannerError::ReadDirFailed {
             path: path.display().to_string(),
             source: e,
@@ -377,7 +379,11 @@ impl Scanner {
 
         let entries: Vec<_> = entries
             .into_iter()
-            .filter(|entry| !is_internal_entry(&entry.file_name().to_string_lossy()))
+            .filter(|entry| {
+                let entry_path = entry.path();
+                let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                !self.ignore_filter.is_ignored(&entry_path, is_dir)
+            })
             .collect();
 
         let scanned_entries = entries
