@@ -189,6 +189,12 @@ impl Syncer {
             return;
         }
 
+        let tracker = crate::telemetry::ProgressTracker::new(&self.drive_session.state.drive_id);
+        if let Ok(mut repo) = self.remote_blob_repository.write() {
+            repo.set_tracker(tracker.clone());
+        }
+
+        tracker.set_phase(crate::telemetry::SyncPhase::Diffing);
         self.status.value = Status::Reconciling;
         self.status.is_dirty = false;
 
@@ -201,6 +207,10 @@ impl Syncer {
             plan, base_root, local_root_hash, remote_root
         );
 
+        if plan == SyncPlan::LocalPush {
+            tracker.set_phase(crate::telemetry::SyncPhase::UploadingPayloads);
+        }
+
         let converged_root = match plan {
             SyncPlan::Converged => Some(local_root_hash.clone()),
             SyncPlan::LocalPush => self.reconcile_with_local_push(&local_root_hash),
@@ -209,7 +219,39 @@ impl Syncer {
             SyncPlan::Merge => self.reconcile_with_merge(&local_root_hash),
         };
 
-        let next_root = self.persist_and_materialize(&local_root_hash, converged_root);
+        if converged_root.is_some() {
+            tracker.set_phase(crate::telemetry::SyncPhase::Materializing);
+        }
+
+        let next_root = self.persist_and_materialize(&local_root_hash, converged_root.clone());
+
+        if converged_root.is_some() {
+            tracker.set_phase(crate::telemetry::SyncPhase::Converged);
+        } else {
+            tracker.set_phase(crate::telemetry::SyncPhase::Failed);
+        }
+
+        let summary = tracker.finalize();
+        // TODO: this is a bit of a hack to avoid making the syncer async; we just spin up a temporary runtime to persist the metrics summary.
+        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            let _ = rt.block_on(async {
+                if let Ok(db) = crate::telemetry::MetricsDatabase::connect_default().await {
+                    let _ = db.insert_summary(&summary).await;
+                }
+            });
+        }
+
+        println!(
+            "[telemetry] Sync completed in {:.2?} (Compression: {:.1}%, Wire: {} B, Dedup Saved: {} B, Avg: {} B/s)",
+            summary.phase_timings.total_duration,
+            summary.compression.compression_ratio(),
+            summary.transfer.wire_bytes_sent,
+            summary.transfer.deduplicated_bytes_saved,
+            summary.avg_upload_rate_bps,
+        );
 
         self.status.value = Status::Idle;
         self.status.is_dirty = false;

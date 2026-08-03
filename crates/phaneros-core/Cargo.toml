@@ -23,7 +23,9 @@ phaneros-sync = { version = "0.1.0", path = "../phaneros-sync" }
 rayon = "1.12.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "migrate"] }
 thiserror = "2.0.18"
+tokio = { version = "1.53.0", features = ["full"] }
 toml = "0.8.20"
 ureq = { version = "2.10.1", features = ["json"] }
 zstd = "0.13.3"

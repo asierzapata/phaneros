@@ -16,6 +16,7 @@ pub struct HttpBlobRepository {
     /// cheaply knowable over HTTP, so this backs `len()` purely for the
     /// syncer's transfer-count logging.
     inserted: usize,
+    progress_tracker: Option<crate::telemetry::ProgressTracker>,
 }
 
 #[derive(Deserialize)]
@@ -35,7 +36,17 @@ impl HttpBlobRepository {
             drive_id: drive_id.into(),
             auth: format!("Bearer {}", token.as_ref()),
             inserted: 0,
+            progress_tracker: None,
         }
+    }
+
+    pub fn with_tracker(mut self, tracker: crate::telemetry::ProgressTracker) -> Self {
+        self.progress_tracker = Some(tracker);
+        self
+    }
+
+    pub fn set_tracker(&mut self, tracker: crate::telemetry::ProgressTracker) {
+        self.progress_tracker = Some(tracker);
     }
 
     fn blob_url(&self, hash: &Hash) -> String {
@@ -56,14 +67,34 @@ impl HttpBlobRepository {
 
     pub fn insert(&mut self, hash: Hash, blob: Blob) -> Result<(), BlobRepositoryError> {
         let (payload_bytes, compression) = compress_blob(&blob.bytes);
+        if let Some(ref tracker) = self.progress_tracker {
+            tracker.record_blob_compressed(
+                blob.bytes.len() as u64,
+                payload_bytes.len() as u64,
+                compression == "zstd",
+            );
+        }
         let size = payload_bytes.len() as i64;
+
+        let ticket_payload = if compression == "zstd" {
+            serde_json::json!({
+                "size": size,
+                "uncompressed_size": blob.bytes.len() as i64,
+                "compression": compression,
+            })
+        } else {
+            serde_json::json!({
+                "size": size,
+                "compression": "none",
+            })
+        };
 
         // Step 1: Create upload ticket (or get 204 if already stored).
         let ticket_response = self
             .agent
             .post(&self.upload_url(&hash))
             .set("Authorization", &self.auth)
-            .send_json(serde_json::json!({ "size": size }))
+            .send_json(ticket_payload)
             .map_err(|e| {
                 eprintln!(
                     "[http-blob] insert stage=ticket hash={} url={} err={:?}",
@@ -82,6 +113,9 @@ impl HttpBlobRepository {
 
         // 204 No Content = already stored, skip the rest.
         if ticket_response.status() == 204 {
+            if let Some(ref tracker) = self.progress_tracker {
+                tracker.record_blob_skipped_dedup(blob.bytes.len() as u64);
+            }
             return Ok(());
         }
 
@@ -120,6 +154,10 @@ impl HttpBlobRepository {
                 _ => BlobRepositoryError::InsertFailed(hash.clone()),
             }
         })?;
+
+        if let Some(ref tracker) = self.progress_tracker {
+            tracker.record_bytes_sent(payload_bytes.len() as u64);
+        }
 
         // Step 3: Commit the upload.
         self.agent

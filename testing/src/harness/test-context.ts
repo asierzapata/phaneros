@@ -118,15 +118,25 @@ enabled = true
   }
 
   public spawnClient(name: string, vaultPath: string, driveId = 'smoke_drive'): ManagedProcess {
-    return this.spawnManagedProcess(name, this.cliBin, [
-      '--config',
-      this.paths.configPath,
-      vaultPath,
-      '--drive-id',
-      driveId,
-      '--store-url',
-      this.storeUrl,
-    ]);
+    return this.spawnManagedProcess(
+      name,
+      this.cliBin,
+      [
+        '--config',
+        this.paths.configPath,
+        vaultPath,
+        '--drive-id',
+        driveId,
+        '--store-url',
+        this.storeUrl,
+      ],
+      {
+        env: {
+          HOME: this.paths.sandboxDir,
+          XDG_CONFIG_HOME: this.paths.sandboxDir,
+        },
+      }
+    );
   }
 
   public async killManagedProcess(item: ManagedProcess): Promise<void> {
