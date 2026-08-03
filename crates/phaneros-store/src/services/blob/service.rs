@@ -61,12 +61,16 @@ impl BlobService {
         &self,
         hash: &Hash,
         size: i64,
+        uncompressed_size: Option<i64>,
+        compression: Option<String>,
     ) -> Result<UploadTicket, BlobServiceError> {
         if self.metadata_repository.exists(hash).await? {
             return Ok(UploadTicket::AlreadyStored);
         }
 
-        self.metadata_repository.declare(hash, size).await?;
+        self.metadata_repository
+            .declare(hash, size, uncompressed_size, compression.as_deref())
+            .await?;
 
         Ok(UploadTicket::Upload(Ticket {
             url: format!("{}/api/blobs/{}/bytes", self.base_url, hash),
@@ -125,6 +129,13 @@ impl BlobService {
     pub async fn get_bytes(&self, hash: &Hash) -> Result<Option<Bytes>, BlobServiceError> {
         Ok(self.bytes_repository.get_bytes(hash).await?)
     }
+
+    pub async fn get_metadata(
+        &self,
+        hash: &Hash,
+    ) -> Result<Option<super::metadata_repository::BlobMetadataInfo>, BlobServiceError> {
+        Ok(self.metadata_repository.get_metadata(hash).await?)
+    }
 }
 
 #[cfg(test)]
@@ -166,7 +177,7 @@ mod tests {
 
         // Ticket declares the size but does not make the blob held.
         assert!(matches!(
-            svc.create_ticket(&hash, 5).await.unwrap(),
+            svc.create_ticket(&hash, 5, None, None).await.unwrap(),
             UploadTicket::Upload(_)
         ));
         assert!(!svc.exists(&hash).await.unwrap());
@@ -197,7 +208,7 @@ mod tests {
         assert!(svc.exists(&hash).await.unwrap());
         assert!(svc.create_download_ticket(&hash).await.unwrap().is_some());
         assert!(matches!(
-            svc.create_ticket(&hash, 5).await.unwrap(),
+            svc.create_ticket(&hash, 5, None, None).await.unwrap(),
             UploadTicket::AlreadyStored
         ));
     }

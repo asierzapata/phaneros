@@ -9,7 +9,9 @@ use crate::{services::blob::UploadTicket, state::AppState};
 
 #[derive(serde::Deserialize)]
 pub struct UploadRequestBody {
-    size: i64,
+    pub size: i64,
+    pub uncompressed_size: Option<i64>,
+    pub compression: Option<String>,
 }
 
 pub async fn upload_blob(
@@ -17,7 +19,11 @@ pub async fn upload_blob(
     Path(hash): Path<String>,
     Json(body): Json<UploadRequestBody>,
 ) -> Response {
-    match state.blob_service.create_ticket(&hash, body.size).await {
+    match state
+        .blob_service
+        .create_ticket(&hash, body.size, body.uncompressed_size, body.compression)
+        .await
+    {
         Ok(UploadTicket::Upload(ticket)) => (StatusCode::OK, Json(ticket)).into_response(),
         // Already stored, the client can skip the upload entirely.
         Ok(UploadTicket::AlreadyStored) => StatusCode::NO_CONTENT.into_response(),

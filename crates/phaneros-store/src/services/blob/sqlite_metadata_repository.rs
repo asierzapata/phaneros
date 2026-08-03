@@ -2,9 +2,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use phaneros_sync::hash::Hash;
-use sqlx::SqlitePool;
+use sqlx::{FromRow, SqlitePool};
 
-use super::metadata_repository::{BlobMetadataRepository, BlobMetadataRepositoryError};
+use super::metadata_repository::{
+    BlobMetadataInfo, BlobMetadataRepository, BlobMetadataRepositoryError,
+};
 
 pub struct SqliteBlobMetadataRepository {
     pool: SqlitePool,
@@ -23,6 +25,15 @@ fn now_unix() -> i64 {
         .as_secs() as i64
 }
 
+#[derive(FromRow)]
+struct BlobMetadataRow {
+    hash: String,
+    size: i64,
+    uncompressed_size: Option<i64>,
+    compression: Option<String>,
+    committed_at: Option<i64>,
+}
+
 #[async_trait]
 impl BlobMetadataRepository for SqliteBlobMetadataRepository {
     async fn exists(&self, hash: &Hash) -> Result<bool, BlobMetadataRepositoryError> {
@@ -35,12 +46,21 @@ impl BlobMetadataRepository for SqliteBlobMetadataRepository {
         Ok(found.is_some())
     }
 
-    async fn declare(&self, hash: &Hash, size: i64) -> Result<(), BlobMetadataRepositoryError> {
+    async fn declare(
+        &self,
+        hash: &Hash,
+        size: i64,
+        uncompressed_size: Option<i64>,
+        compression: Option<&str>,
+    ) -> Result<(), BlobMetadataRepositoryError> {
+        let comp = compression.unwrap_or("none");
         sqlx::query(
-            "INSERT INTO blob_metadata (hash, size) VALUES (?, ?) ON CONFLICT(hash) DO NOTHING",
+            "INSERT INTO blob_metadata (hash, size, uncompressed_size, compression) VALUES (?, ?, ?, ?) ON CONFLICT(hash) DO NOTHING",
         )
         .bind(hash)
         .bind(size)
+        .bind(uncompressed_size)
+        .bind(comp)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -52,6 +72,25 @@ impl BlobMetadataRepository for SqliteBlobMetadataRepository {
             .fetch_optional(&self.pool)
             .await?;
         Ok(size)
+    }
+
+    async fn get_metadata(
+        &self,
+        hash: &Hash,
+    ) -> Result<Option<BlobMetadataInfo>, BlobMetadataRepositoryError> {
+        let row: Option<BlobMetadataRow> =
+            sqlx::query_as("SELECT hash, size, uncompressed_size, compression, committed_at FROM blob_metadata WHERE hash = ?")
+                .bind(hash)
+                .fetch_optional(&self.pool)
+                .await?;
+
+        Ok(row.map(|r| BlobMetadataInfo {
+            hash: r.hash,
+            size: r.size,
+            uncompressed_size: r.uncompressed_size,
+            compression: r.compression.unwrap_or_else(|| "none".to_string()),
+            committed_at: r.committed_at,
+        }))
     }
 
     async fn mark_committed(&self, hash: &Hash) -> Result<(), BlobMetadataRepositoryError> {
@@ -87,8 +126,15 @@ mod tests {
 
         // Declared: size is known, but the store does not yet hold the bytes.
         assert!(!repo.exists(&hash).await.unwrap());
-        repo.declare(&hash, 5885).await.unwrap();
+        repo.declare(&hash, 5885, Some(10000), Some("zstd"))
+            .await
+            .unwrap();
         assert_eq!(repo.declared_size(&hash).await.unwrap(), Some(5885));
+
+        let meta = repo.get_metadata(&hash).await.unwrap().unwrap();
+        assert_eq!(meta.uncompressed_size, Some(10000));
+        assert_eq!(meta.compression, "zstd");
+
         assert!(!repo.exists(&hash).await.unwrap());
 
         // Committed: the bytes have landed, so the store now reports it as held.
