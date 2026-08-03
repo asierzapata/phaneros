@@ -1,7 +1,7 @@
 pub mod blob;
 pub mod drive;
 
-use axum::Router;
+use axum::{Router, routing::get};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
@@ -9,6 +9,7 @@ use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/health", get(|| async { "OK" }))
         .nest(
             "/api",
             Router::new()
