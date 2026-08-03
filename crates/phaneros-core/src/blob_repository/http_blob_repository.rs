@@ -3,6 +3,7 @@ use serde::Deserialize;
 use crate::blob_repository::{
     Blob, BlobRepository, Hash, WritableBlobRepository, repository::BlobRepositoryError,
 };
+use crate::utils::compression::{compress_blob, decompress_blob};
 
 #[derive(Debug)]
 pub struct HttpBlobRepository {
@@ -54,7 +55,8 @@ impl HttpBlobRepository {
     }
 
     pub fn insert(&mut self, hash: Hash, blob: Blob) -> Result<(), BlobRepositoryError> {
-        let size = blob.bytes.len() as i64;
+        let (payload_bytes, compression) = compress_blob(&blob.bytes);
+        let size = payload_bytes.len() as i64;
 
         // Step 1: Create upload ticket (or get 204 if already stored).
         let ticket_response = self
@@ -91,28 +93,33 @@ impl HttpBlobRepository {
             BlobRepositoryError::InsertFailed(hash.clone())
         })?;
 
-        // Step 2: Upload the raw bytes to the ticket URL.
-        self.agent
+        // Step 2: Upload the bytes to the ticket URL with Content-Encoding if compressed.
+        let mut request = self
+            .agent
             .put(&ticket.url)
             .set("Authorization", &self.auth)
-            .set("Content-Type", "application/octet-stream")
-            .send_bytes(&blob.bytes)
-            .map_err(|e| {
-                eprintln!(
-                    "[http-blob] insert stage=put-bytes hash={} ticket_url={} size={} err={:?}",
-                    hash,
-                    ticket.url,
-                    blob.bytes.len(),
-                    e
-                );
-                match e {
-                    ureq::Error::Status(status, _) => BlobRepositoryError::UploadRejected {
-                        hash: hash.clone(),
-                        reason: format!("put bytes returned {}", status),
-                    },
-                    _ => BlobRepositoryError::InsertFailed(hash.clone()),
-                }
-            })?;
+            .set("Content-Type", "application/octet-stream");
+
+        if compression == "zstd" {
+            request = request.set("Content-Encoding", "zstd");
+        }
+
+        request.send_bytes(&payload_bytes).map_err(|e| {
+            eprintln!(
+                "[http-blob] insert stage=put-bytes hash={} ticket_url={} size={} err={:?}",
+                hash,
+                ticket.url,
+                payload_bytes.len(),
+                e
+            );
+            match e {
+                ureq::Error::Status(status, _) => BlobRepositoryError::UploadRejected {
+                    hash: hash.clone(),
+                    reason: format!("put bytes returned {}", status),
+                },
+                _ => BlobRepositoryError::InsertFailed(hash.clone()),
+            }
+        })?;
 
         // Step 3: Commit the upload.
         self.agent
@@ -178,7 +185,7 @@ impl BlobRepository for HttpBlobRepository {
             BlobRepositoryError::RetrieveFailed(hash.clone())
         })?;
 
-        // Step 2: Download the raw bytes from the ticket URL.
+        // Step 2: Download bytes from the ticket URL.
         let bytes_response = match self
             .agent
             .get(&ticket.url)
@@ -196,14 +203,27 @@ impl BlobRepository for HttpBlobRepository {
             }
         };
 
-        let mut bytes = Vec::new();
+        let encoding = bytes_response
+            .header("Content-Encoding")
+            .unwrap_or("none")
+            .to_string();
+
+        let mut raw_bytes = Vec::new();
         bytes_response
             .into_reader()
-            .read_to_end(&mut bytes)
+            .read_to_end(&mut raw_bytes)
             .map_err(|e| {
                 eprintln!("[http-blob] get stage=read hash={} err={:?}", hash, e);
                 BlobRepositoryError::RetrieveFailed(hash.clone())
             })?;
+
+        let bytes = decompress_blob(&raw_bytes, &encoding).map_err(|e| {
+            eprintln!(
+                "[http-blob] get stage=decompress hash={} encoding={} err={:?}",
+                hash, encoding, e
+            );
+            BlobRepositoryError::RetrieveFailed(hash.clone())
+        })?;
 
         Ok(Some(Blob { bytes }))
     }

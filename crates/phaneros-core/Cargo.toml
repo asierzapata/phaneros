@@ -26,6 +26,7 @@ serde_json = "1.0.145"
 thiserror = "2.0.18"
 toml = "0.8.20"
 ureq = { version = "2.10.1", features = ["json"] }
+zstd = "0.13.3"
 
 [dev-dependencies]
 filetime = "0.2.29"
