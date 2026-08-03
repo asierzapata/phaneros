@@ -1,10 +1,10 @@
 [package]
-name = "phaneros"
+name = "phaneros-core"
 version = "0.1.0"
-description = "A command-line utility for synchronizing files and directories across multiple devices."
+description = "Core engine library for file synchronization across devices."
 repository = "https://github.com/asierzapata/phaneros"
 homepage = "https://asierzapata.github.io/phaneros/"
-keywords = ["sync", "file-synchronization", "command-line", "utility"]
+keywords = ["sync", "file-synchronization", "engine", "utility"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 authors.workspace = true
@@ -12,13 +12,8 @@ edition.workspace = true
 license.workspace = true
 publish = true
 
-[[bin]]
-name = "phaneros"
-path = "src/main.rs"
-
 [dependencies]
 blake3 = "1.8.5"
-clap = { version = "4.5", features = ["derive"] }
 dirs = "6.0.0"
 fs2 = "0.4.3"
 notify = "8.2.0"

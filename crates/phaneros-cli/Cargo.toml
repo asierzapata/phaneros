@@ -1,0 +1,18 @@
+[package]
+name = "phaneros-cli"
+version = "0.1.0"
+description = "Command-line interface for phaneros file synchronization."
+repository = "https://github.com/asierzapata/phaneros"
+homepage = "https://asierzapata.github.io/phaneros/"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "phaneros"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+phaneros-core = { version = "0.1.0", path = "../phaneros-core" }
