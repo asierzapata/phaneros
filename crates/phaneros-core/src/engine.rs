@@ -16,6 +16,7 @@ pub struct EngineConfig {
     pub token: String,
     pub dump_store: Option<PathBuf>,
     pub enable_telemetry: bool,
+    pub max_concurrent_uploads: usize,
 }
 
 impl EngineConfig {
@@ -33,11 +34,17 @@ impl EngineConfig {
             token,
             dump_store,
             enable_telemetry: false,
+            max_concurrent_uploads: 10,
         }
     }
 
     pub fn with_telemetry(mut self, enabled: bool) -> Self {
         self.enable_telemetry = enabled;
+        self
+    }
+
+    pub fn with_max_concurrent_uploads(mut self, max: usize) -> Self {
+        self.max_concurrent_uploads = max;
         self
     }
 }
@@ -136,7 +143,8 @@ impl SyncEngine {
             drive_session,
             rescan,
         )
-        .with_telemetry(self.config.enable_telemetry);
+        .with_telemetry(self.config.enable_telemetry)
+        .with_max_concurrent_uploads(self.config.max_concurrent_uploads);
 
         drop(sync_trigger_tx);
 

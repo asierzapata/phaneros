@@ -132,6 +132,7 @@ pub struct Syncer {
     /// directory after every reconcile (debug tooling, off by default).
     store_dump_dir: Option<std::path::PathBuf>,
     pub enable_telemetry: bool,
+    pub max_concurrent_uploads: usize,
 }
 
 impl Syncer {
@@ -163,11 +164,17 @@ impl Syncer {
             },
             store_dump_dir: None,
             enable_telemetry: false,
+            max_concurrent_uploads: 10,
         }
     }
 
     pub fn with_telemetry(mut self, enabled: bool) -> Self {
         self.enable_telemetry = enabled;
+        self
+    }
+
+    pub fn with_max_concurrent_uploads(mut self, max: usize) -> Self {
+        self.max_concurrent_uploads = max;
         self
     }
 
