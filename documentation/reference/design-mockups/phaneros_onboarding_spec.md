@@ -1,65 +1,54 @@
-# Phaneros — Arc-Inspired "Unboxing" Onboarding Specification (v3.0)
+# Phaneros — Semantic Dotted Art Onboarding Specification (v15.0)
 
-> **Design Alignment:** Arc Browser-inspired "unboxing" narrative, interactive theme & color picker, 3D interactive **Phaneros Vault Member Card**, progressive line progress track bar, ambient background glow, zero-emoji policy, and seamless storage target selection.
-
----
-
-## 🖼️ Interactive Onboarding Prototype
-
-🔗 **[Open Arc-Inspired Unboxing Prototype](file:///Users/asierzapata/Documents/Projects/phaneros/documentation/reference/design-mockups/phaneros_onboarding_v1.html)**
-
-*Open in your web browser to experience the Arc Browser-style "unboxing" journey, test the **interactive accent theme picker**, configure storage targets, inspect the **personalized 3D Vault Member Card**, and launch into the Control Center.*
+> **Design Alignment:** Semantically Aligned 5-Step Dotted Art Architecture (**Step 1: 3D Mac Disk & Encrypted Lock Vault** ➔ **Step 2: 3D Globe & Satellite Nodes** ➔ **Step 3: 3D Folder Network & Real-Time File Scanner** ➔ **Step 4: Topographic Wavefront Surge** ➔ **Step 5: 3D macOS Menu Bar & Protective Pulse Dome**), Wispr Flow human-centric copy, zero technical jargon, "Try it right now" connection test drive, OKLCH paper substrate, and full-bleed edge-to-edge layout.
 
 ---
 
-## 🎨 Arc-Inspired "Unboxing" Journey Architecture
+## 🖼️ Interactive Onboarding Prototype (v2)
 
-Unlike traditional dull configuration wizards, Phaneros implements an **Arc-style "unboxing" experience** prioritizing emotional engagement, tactile feedback, and narrative delight:
+🔗 **[Open Semantic Dotted Art Onboarding Prototype](file:///Users/asierzapata/Documents/Projects/phaneros/documentation/reference/design-mockups/phaneros_onboarding_v2.html)**
+
+*Open in your web browser to test the **Semantically Aligned 5-Step Dotted Art Journey**, experience the **Mac Disk Vault**, **Folder Scanner Network**, **Topographic Wave Ripples**, and **macOS Menu Bar Protective Dome**.*
+
+---
+
+## 🌐 Semantically Aligned 5-Step Dotted Art Journey
 
 ```
- ┌─────────────────────────────────────────────────────────────────────────────────┐
- │ [Progress Track Bar ========================>                                 ] │
- │ Phaneros                                                         Unboxing 1 of 5│
- ├─────────────────────────────────────────────────────────────────────────────────┤
- │                                                                                 │
- │ 1. Meet Phaneros — Animated Sync Engine Micro-Diagram                           │
- │ 2. Workspace Vibe — Interactive Color & Theme Selector (Cobalt, Emerald, Amber) │
- │ 3. Storage Target — Phaneros Cloud ($4/mo Trial) vs Self-Hosted Server Endpoint │
- │ 4. Synced Folders — Configure local disk folder vaults                          │
- │ 5. Phaneros Vault Member Card — 3D Personalized Interactive Identity Card       │
- │                                                                                 │
- └─────────────────────────────────────────────────────────────────────────────────┘
+ Step 1: 3D Mac Disk Vault    Step 2: Globe & Satellites    Step 3: 3D Folder Scanner    Step 4: Topographic Wave    Step 5: macOS Menu Bar Dome
+    💿 Mac Disk & Lock Core     🌐 3D Globe & Node Orbit    📁 Floating Folders & Scanner   🌊 Wave Telemetry Surge    🛡️ Menu Bar & Pulse Dome
 ```
 
-### 1. Meet Phaneros (Step 1)
-- Narrative intro to local-first file synchronization.
-- **Interactive Micro-Diagram:** Animated vector beam flow connecting Local Disk node, Blake3 Engine, and E2EE Vault.
+### Step-by-Step Semantic Art Mapping:
+1. **Step 1 (01 / Welcome — "Local-First Protection"):**
+   - **Art:** 3D Dotted Mac Disk Drive Platters & Hovering Encrypted Lock Vault.
+   - **Meaning:** Represents your local Mac computer disk (`/Users/asierzapata/`) where files originate, protected by end-to-end local encryption.
 
-### 2. Workspace Vibe & Color Customization (Step 2 — Arc Signature)
-- Interactive theme palette selector:
-  - **Cobalt Blue** (Default OKLCH primary)
-  - **Emerald Green** (High-trust emerald green)
-  - **Amber Gold** (Warm editorial gold accent)
-  - **Slate Gray** (Minimal dark slate)
-- Live color preview updating UI CSS custom properties (`--accent`, `--accent-light`, `--accent-border`) in real-time as the user picks a vibe!
+2. **Step 2 (02 / Destination — "Cloud vs Self-Hosted"):**
+   - **Art:** 3D Dotted Halftone Globe & Orbital Satellite Destination Nodes.
+   - **Interactive Flow:**
+     - *Phaneros Managed Cloud:* Web sign-in button that opens browser authentication and returns an "● Account Connected" state (`alex@phaneros.io`).
+     - *Self-Hosted Server:* Server Endpoint URL (`https://sync.mycompany.com:8443`) and API Token configuration panel with "Verify Connection" action.
 
-### 3. Storage Target Selection (Step 3)
-- **Phaneros Cloud (SaaS):** Zero-configuration managed cloud storage with 7-Day Free Trial ($4/mo).
-- **Self-Hosted Server:** Open source private instance with custom endpoint URL.
+3. **Step 3 (03 / Folder Vaults — "Select Folders to Watch"):**
+   - **Art:** 3D Dynamic Folder Network, Upward File Particle Streams & Vertical Scanning Laser Ring (dynamically reflects watched folder count).
+   - **Interactive Flow:**
+     - Dynamic folder vault list with delete button (`✕`) for removing watched paths.
+     - Add New Folder Vault input + Quick Add presets (`~/Documents`, `~/Desktop`, `~/Developer`, `~/Pictures`).
 
-### 4. Synced Folders Setup (Step 4)
-- Local folder drive selection (`default` ➔ `~/Documents/PhanerosSync`, `code-vault` ➔ `~/Projects/Vault`).
+4. **Step 4 (04 / Test Drive — "Connection Test"):**
+   - **Art:** 3D Dotted Topographic Heightmap & Ripple Surge.
+   - **Meaning:** Represents active real-time data flow and telemetry speed surging when you test background sync.
 
-### 5. Personalized Phaneros Vault Member Card (Step 5 — Arc Signature)
-- Generates an interactive 3D perspective **Phaneros Vault Member Card**:
-  - Displays machine owner identity (`asierzapata @ Mac-Studio`), Vault Badge ID (`#VAULT-0842`), storage destination, encryption status, and active drive count.
-  - Interactive 3D tilt & hover physics on cursor movement.
-- **Primary CTA:** "Enter Control Center ↗" (launches `phaneros_main_app_v1.html`).
+5. **Step 5 (05 / Setup Complete — "Fully Synchronized Vault"):**
+   - **Art:** 3D Infinity Particle Loop Track, Central Shield Core & Harmonious Alignment Rings.
+   - **Meaning:** Represents continuous, infinite background synchronization, total data harmony, and permanent security.
 
 ---
 
 ## 📄 Reference Files
 
-- 🖥️ **[Interactive Arc-Inspired Onboarding: `phaneros_onboarding_v1.html`](file:///Users/asierzapata/Documents/Projects/phaneros/documentation/reference/design-mockups/phaneros_onboarding_v1.html)**
+- 🖥️ **[Semantic Dotted Art Onboarding Prototype: `phaneros_onboarding_v2.html`](file:///Users/asierzapata/Documents/Projects/phaneros/documentation/reference/design-mockups/phaneros_onboarding_v2.html)**
+- 📄 **[Specification Document: `phaneros_onboarding_v2_spec.md`](file:///Users/asierzapata/Documents/Projects/phaneros/documentation/reference/design-mockups/phaneros_onboarding_v2_spec.md)**
+- 🖥️ **[Preserved Onboarding Prototype v1: `phaneros_onboarding_v1.html`](file:///Users/asierzapata/Documents/Projects/phaneros/documentation/reference/design-mockups/phaneros_onboarding_v1.html)**
 - 🖥️ **[Main App Control Center Prototype: `phaneros_main_app_v1.html`](file:///Users/asierzapata/Documents/Projects/phaneros/documentation/reference/design-mockups/phaneros_main_app_v1.html)**
-- 📄 **[Main App Specification: `phaneros_main_app_spec.md`](file:///Users/asierzapata/Documents/Projects/phaneros/documentation/reference/design-mockups/phaneros_main_app_spec.md)**
