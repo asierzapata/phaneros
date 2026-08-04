@@ -7,7 +7,7 @@ use std::{fs, time::SystemTime};
 use thiserror::Error;
 
 use crate::blob_repository::InMemoryBlobRepository;
-use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository};
+use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node};
 use crate::scanner::file_chunker::{FileChunker, FileChunkerConfig, FileChunkerError};
 use crate::scanner::ignore::IgnoreFilter;
 use crate::utils::observer::Publisher;
@@ -292,14 +292,14 @@ impl Scanner {
                 // Commit the whole scan in one write lock so readers never see
                 // a root whose nodes aren't all present yet.
                 {
-                    let mut store = self.node_repository.write().unwrap();
+                    let store = self.node_repository.read().unwrap();
                     for (hash, node) in nodes {
                         store
-                            .insert(hash, node)
+                            .insert_internal(hash, node)
                             .expect("in-memory node store insert is infallible");
                     }
                     store
-                        .set_root(entry.hash.clone())
+                        .set_root_internal(entry.hash.clone())
                         .expect("in-memory node store set_root is infallible");
                 }
                 self.complete_snapshot(scanned_entries);
@@ -489,7 +489,7 @@ impl Scanner {
                 self.node_repository
                     .read()
                     .unwrap()
-                    .get_node(hash)
+                    .get_node_internal(hash)
                     .is_ok_and(|node| node.is_some())
             });
 

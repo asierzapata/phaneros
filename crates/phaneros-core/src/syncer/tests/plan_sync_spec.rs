@@ -5,8 +5,8 @@ fn hash(v: &str) -> Hash {
     v.to_string()
 }
 
-#[test]
-fn no_base_with_a_remote_root_uses_bootstrap_pull_policy() {
+#[tokio::test]
+async fn no_base_with_a_remote_root_uses_bootstrap_pull_policy() {
     let local = hash("local");
 
     assert_eq!(
@@ -19,8 +19,8 @@ fn no_base_with_a_remote_root_uses_bootstrap_pull_policy() {
     );
 }
 
-#[test]
-fn no_base_and_no_remote_root_pushes_local() {
+#[tokio::test]
+async fn no_base_and_no_remote_root_pushes_local() {
     // First run of the first client on a brand new drive: there is nothing to
     // bootstrap from, so local seeds the remote instead of stalling.
     let local = hash("local");
@@ -28,8 +28,8 @@ fn no_base_and_no_remote_root_pushes_local() {
     assert_eq!(plan_sync(None, &local, None), SyncPlan::LocalPush);
 }
 
-#[test]
-fn local_and_remote_equal_means_converged_even_with_stale_base() {
+#[tokio::test]
+async fn local_and_remote_equal_means_converged_even_with_stale_base() {
     let base = hash("old-base");
     let current = hash("current");
 
@@ -39,8 +39,8 @@ fn local_and_remote_equal_means_converged_even_with_stale_base() {
     );
 }
 
-#[test]
-fn when_remote_root_is_absent_and_base_exists_we_recover_by_pushing_local() {
+#[tokio::test]
+async fn when_remote_root_is_absent_and_base_exists_we_recover_by_pushing_local() {
     let base = hash("base");
 
     // Even if local has not changed since base, remote has effectively lost
@@ -55,8 +55,8 @@ fn when_remote_root_is_absent_and_base_exists_we_recover_by_pushing_local() {
     );
 }
 
-#[test]
-fn pull_when_only_remote_changed_since_base() {
+#[tokio::test]
+async fn pull_when_only_remote_changed_since_base() {
     let base = hash("base");
     let remote = hash("remote-new");
 
@@ -66,8 +66,8 @@ fn pull_when_only_remote_changed_since_base() {
     );
 }
 
-#[test]
-fn push_when_only_local_changed_since_base() {
+#[tokio::test]
+async fn push_when_only_local_changed_since_base() {
     let base = hash("base");
     let local = hash("local-new");
 
@@ -77,8 +77,8 @@ fn push_when_only_local_changed_since_base() {
     );
 }
 
-#[test]
-fn merge_when_both_sides_diverged_from_base() {
+#[tokio::test]
+async fn merge_when_both_sides_diverged_from_base() {
     let base = hash("base");
     let local = hash("local-new");
     let remote = hash("remote-new");
@@ -89,8 +89,8 @@ fn merge_when_both_sides_diverged_from_base() {
     );
 }
 
-#[test]
-fn truth_table_rows_stay_stable() {
+#[tokio::test]
+async fn truth_table_rows_stay_stable() {
     let b = hash("b");
     let l = hash("l");
     let r = hash("r");

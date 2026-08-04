@@ -38,7 +38,8 @@ fn scan_view(scanner: &mut Scanner) -> Result<TreeView, ScannerError> {
     let root_hash = scanner.scan()?;
     let store = scanner.get_store();
     let store = store.read().unwrap();
-    let (folders, files) = expand_folder(&store, &root_hash);
+    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let (folders, files) = rt.block_on(expand_folder(&store, &root_hash));
     Ok(TreeView {
         root_hash,
         folders,
@@ -46,38 +47,40 @@ fn scan_view(scanner: &mut Scanner) -> Result<TreeView, ScannerError> {
     })
 }
 
-fn expand_folder(store: &InMemoryNodeRepository, hash: &Hash) -> (Vec<FolderView>, Vec<FileView>) {
-    match store.get_node(hash).unwrap() {
-        Some(Node::Folder { folders, files }) => (
-            folders
-                .iter()
-                .map(|entry| {
-                    let (sub_folders, sub_files) = expand_folder(store, &entry.hash);
-                    FolderView {
+fn expand_folder<'a>(
+    store: &'a InMemoryNodeRepository,
+    hash: &'a Hash,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = (Vec<FolderView>, Vec<FileView>)> + Send + 'a>> {
+    Box::pin(async move {
+        match store.get_node(hash).await.unwrap() {
+            Some(Node::Folder { folders, files }) => {
+                let mut folder_views = Vec::new();
+                for entry in folders {
+                    let (sub_folders, sub_files) = expand_folder(store, &entry.hash).await;
+                    folder_views.push(FolderView {
                         name: entry.name.clone(),
                         hash: entry.hash.clone(),
                         folders: sub_folders,
                         files: sub_files,
-                    }
-                })
-                .collect(),
-            files
-                .iter()
-                .map(|entry| {
-                    let blobs = match store.get_node(&entry.hash).unwrap() {
+                    });
+                }
+                let mut file_views = Vec::new();
+                for entry in files {
+                    let blobs = match store.get_node(&entry.hash).await.unwrap() {
                         Some(Node::File { blobs }) => blobs.clone(),
                         _ => panic!("file node {} missing from store", entry.hash),
                     };
-                    FileView {
+                    file_views.push(FileView {
                         name: entry.name.clone(),
                         hash: entry.hash.clone(),
-                        blobs: blobs,
-                    }
-                })
-                .collect(),
-        ),
-        _ => panic!("folder node {} missing from store", hash),
-    }
+                        blobs,
+                    });
+                }
+                (folder_views, file_views)
+            }
+            _ => panic!("folder node {} missing from store", hash),
+        }
+    })
 }
 
 fn create_file(dir: &Path, name: &str, content: &[u8]) {

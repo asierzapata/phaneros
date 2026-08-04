@@ -77,8 +77,8 @@ fn free_destination(candidate: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
-    #[test]
-    fn write_atomic_creates_missing_parents() {
+    #[tokio::test]
+    async fn write_atomic_creates_missing_parents() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nested/deeper/notes.txt");
 
@@ -87,8 +87,8 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"hello");
     }
 
-    #[test]
-    fn write_atomic_replaces_existing_content_and_leaves_no_temp_behind() {
+    #[tokio::test]
+    async fn write_atomic_replaces_existing_content_and_leaves_no_temp_behind() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("notes.txt");
         std::fs::write(&path, b"old").unwrap();
@@ -104,8 +104,8 @@ mod tests {
         assert_eq!(entries, vec!["notes.txt".to_string()]);
     }
 
-    #[test]
-    fn temp_path_appends_instead_of_replacing_the_extension() {
+    #[tokio::test]
+    async fn temp_path_appends_instead_of_replacing_the_extension() {
         // Replacing the extension would collapse these two onto one temp path.
         assert_eq!(
             temp_path_for(Path::new("/vault/notes.tar.gz")),
@@ -117,8 +117,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn internal_entries_are_the_state_dir_and_temp_files() {
+    #[tokio::test]
+    async fn internal_entries_are_the_state_dir_and_temp_files() {
         assert!(is_internal_entry(".phaneros"));
         assert!(is_internal_entry("notes.txt.phaneros-tmp"));
 
@@ -127,8 +127,8 @@ mod tests {
         assert!(!is_internal_entry("phaneros"));
     }
 
-    #[test]
-    fn move_to_trash_preserves_the_relative_path() {
+    #[tokio::test]
+    async fn move_to_trash_preserves_the_relative_path() {
         let dir = tempfile::tempdir().unwrap();
         let vault = dir.path().join("vault");
         let trash_batch = vault.join(".phaneros/trash/1");
@@ -143,8 +143,8 @@ mod tests {
         assert!(!path.exists());
     }
 
-    #[test]
-    fn move_to_trash_moves_directories_whole() {
+    #[tokio::test]
+    async fn move_to_trash_moves_directories_whole() {
         let dir = tempfile::tempdir().unwrap();
         let vault = dir.path().join("vault");
         let trash_batch = vault.join(".phaneros/trash/1");
@@ -161,8 +161,8 @@ mod tests {
         assert!(!folder.exists());
     }
 
-    #[test]
-    fn move_to_trash_suffixes_a_name_already_taken_in_the_batch() {
+    #[tokio::test]
+    async fn move_to_trash_suffixes_a_name_already_taken_in_the_batch() {
         let dir = tempfile::tempdir().unwrap();
         let vault = dir.path().join("vault");
         let trash_batch = vault.join(".phaneros/trash/1");

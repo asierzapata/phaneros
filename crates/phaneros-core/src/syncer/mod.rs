@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use futures::StreamExt;
 
 use thiserror::Error;
 
@@ -117,7 +118,7 @@ struct SyncerStatus {
 }
 
 pub struct Syncer {
-    watcher_rx: std::sync::mpsc::Receiver<Hash>,
+    watcher_rx: tokio::sync::mpsc::Receiver<Hash>,
     initial_root_hash: Hash,
     local_node_repository: Arc<RwLock<InMemoryNodeRepository>>,
     remote_node_repository: Arc<RwLock<HttpNodeRepository>>,
@@ -135,7 +136,7 @@ pub struct Syncer {
 
 impl Syncer {
     pub fn new(
-        watcher_rx: std::sync::mpsc::Receiver<Hash>,
+        watcher_rx: tokio::sync::mpsc::Receiver<Hash>,
         initial_root_hash: Hash,
         local_node_repository: Arc<RwLock<InMemoryNodeRepository>>,
         remote_node_repository: Arc<RwLock<HttpNodeRepository>>,
@@ -177,19 +178,19 @@ impl Syncer {
         self
     }
 
-    pub fn run(&mut self) {
+    pub async fn run(&mut self) {
         println!(
             "Syncer started with initial root hash: {}",
             self.initial_root_hash
         );
-        self.sync_once(self.initial_root_hash.clone());
-        while let Ok(updated_root_hash) = self.watcher_rx.recv() {
+        self.sync_once(self.initial_root_hash.clone()).await;
+        while let Some(updated_root_hash) = self.watcher_rx.recv().await {
             println!("Syncer received updated root hash: {}", updated_root_hash);
-            self.sync_once(updated_root_hash);
+            self.sync_once(updated_root_hash).await;
         }
     }
 
-    fn sync_once(&mut self, local_root_hash: Hash) {
+    async fn sync_once(&mut self, local_root_hash: Hash) {
         if !matches!(self.status.value, Status::Idle) {
             println!("Syncer is already busy; skipping this event.");
             self.status.is_dirty = true;
@@ -206,7 +207,7 @@ impl Syncer {
         self.status.is_dirty = false;
 
         let base_root = self.current_base_root();
-        let remote_root = self.get_fresh_remote_hash();
+        let remote_root = self.get_fresh_remote_hash().await;
         let plan = plan_sync(base_root.as_ref(), &local_root_hash, remote_root.as_ref());
 
         println!(
@@ -220,17 +221,17 @@ impl Syncer {
 
         let converged_root = match plan {
             SyncPlan::Converged => Some(local_root_hash.clone()),
-            SyncPlan::LocalPush => self.reconcile_with_local_push(&local_root_hash),
-            SyncPlan::RemoteBootstrapPull => self.reconcile_with_remote_bootstrap_pull(),
-            SyncPlan::RemotePull => self.reconcile_with_remote_pull(),
-            SyncPlan::Merge => self.reconcile_with_merge(&local_root_hash),
+            SyncPlan::LocalPush => self.reconcile_with_local_push(&local_root_hash).await,
+            SyncPlan::RemoteBootstrapPull => self.reconcile_with_remote_bootstrap_pull().await,
+            SyncPlan::RemotePull => self.reconcile_with_remote_pull().await,
+            SyncPlan::Merge => self.reconcile_with_merge(&local_root_hash).await,
         };
 
         if converged_root.is_some() {
             tracker.set_phase(crate::telemetry::SyncPhase::Materializing);
         }
 
-        let next_root = self.persist_and_materialize(&local_root_hash, converged_root.clone());
+        let next_root = self.persist_and_materialize(&local_root_hash, converged_root.clone()).await;
 
         if converged_root.is_some() {
             tracker.set_phase(crate::telemetry::SyncPhase::Converged);
@@ -239,17 +240,9 @@ impl Syncer {
         }
 
         let summary = tracker.finalize();
-        // TODO: this is a bit of a hack to avoid making the syncer async; we just spin up a temporary runtime to persist the metrics summary.
         if self.enable_telemetry {
-            if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                let _ = rt.block_on(async {
-                    if let Ok(db) = crate::telemetry::MetricsDatabase::connect_default().await {
-                        let _ = db.insert_summary(&summary).await;
-                    }
-                });
+            if let Ok(db) = crate::telemetry::MetricsDatabase::connect_default().await {
+                let _ = db.insert_summary(&summary).await;
             }
         }
 
@@ -267,11 +260,14 @@ impl Syncer {
 
         if let Some(next_root) = next_root {
             println!("Syncer found the vault changed underneath it; syncing again.");
-            self.sync_once(next_root);
+            // We use Box::pin if we needed recursion but here we can just loop or call it again. Wait, async recursion needs Box::pin.
+            // Let's just call it recursively since it's tail recursion (mostly). Actually Rust async fns can't be recursive directly. 
+            // So we'll use Box::pin.
+            Box::pin(self.sync_once(next_root)).await;
         }
     }
 
-    fn persist_and_materialize(
+    async fn persist_and_materialize(
         &mut self,
         local_root_hash: &Hash,
         converged_root: Option<Hash>,
@@ -283,7 +279,7 @@ impl Syncer {
         if converged_root != *local_root_hash {
             self.status.value = Status::Materializing;
 
-            if !self.materialize_converged_root(local_root_hash, &converged_root) {
+            if !self.materialize_converged_root(local_root_hash, &converged_root).await {
                 return None;
             }
 
@@ -306,7 +302,7 @@ impl Syncer {
         next_root
     }
 
-    fn materialize_converged_root(&self, from_root: &Hash, to_root: &Hash) -> bool {
+    async fn materialize_converged_root(&self, from_root: &Hash, to_root: &Hash) -> bool {
         let local_node_repository = self.local_node_repository.read().unwrap();
         let local_blob_repository = self.local_blob_repository.read().unwrap();
         let trash_batch = trash_batch_path(&self.vault_path);
@@ -318,7 +314,7 @@ impl Syncer {
             &trash_batch,
             Some(from_root),
             to_root,
-        ) {
+        ).await {
             Ok(stats) if stats.touched_nothing() => {
                 println!("Syncer found the vault already matching {}.", to_root);
                 true
@@ -344,12 +340,12 @@ impl Syncer {
         self.drive_session.state.last_synced_root.clone()
     }
 
-    fn get_fresh_remote_hash(&self) -> Option<Hash> {
-        let mut remote_node_repository = self.remote_node_repository.write().unwrap();
+    async fn get_fresh_remote_hash(&self) -> Option<Hash> {
+        let remote_node_repository = self.remote_node_repository.write().unwrap();
         remote_node_repository
-            .refresh_root()
+            .refresh_root().await
             .ok()
-            .and_then(|root| root)
+            .flatten()
     }
 
     fn persist_converged_root(&mut self, root_hash: &Hash) {
@@ -363,7 +359,7 @@ impl Syncer {
         }
     }
 
-    fn reconcile_with_local_push(&mut self, root_hash: &Hash) -> Option<Hash> {
+    async fn reconcile_with_local_push(&mut self, root_hash: &Hash) -> Option<Hash> {
         let mut success = false;
 
         {
@@ -380,7 +376,7 @@ impl Syncer {
                 &*local_blob_repository,
                 &mut *remote_blob_repository,
                 &root_hash,
-            );
+            ).await;
 
             match result {
                 Ok(0) => {
@@ -418,7 +414,7 @@ impl Syncer {
                     &*local_node_repository,
                     &*local_blob_repository,
                     &dump_dir.join("local_store_dump.txt"),
-                ) {
+                ).await {
                     eprintln!("Syncer failed to dump local store state: {}", err);
                 }
             }
@@ -427,8 +423,8 @@ impl Syncer {
         success.then(|| root_hash.clone())
     }
 
-    fn reconcile_with_remote_bootstrap_pull(&mut self) -> Option<Hash> {
-        let Some(remote_root_hash) = self.get_fresh_remote_hash() else {
+    async fn reconcile_with_remote_bootstrap_pull(&mut self) -> Option<Hash> {
+        let Some(remote_root_hash) = self.get_fresh_remote_hash().await else {
             eprintln!("Syncer cannot bootstrap pull because remote root is unavailable.");
             return None;
         };
@@ -449,7 +445,7 @@ impl Syncer {
                 &mut *local_blob_repository,
                 &mut *remote_blob_repository,
                 &remote_root_hash,
-            );
+            ).await;
 
             match result {
                 Ok(0) => {
@@ -485,7 +481,7 @@ impl Syncer {
                     &*local_node_repository,
                     &*local_blob_repository,
                     &dump_dir.join("local_store_dump.txt"),
-                ) {
+                ).await {
                     eprintln!("Syncer failed to dump local store state: {}", err);
                 }
             }
@@ -494,8 +490,8 @@ impl Syncer {
         success.then_some(remote_root_hash)
     }
 
-    fn reconcile_with_remote_pull(&mut self) -> Option<Hash> {
-        let Some(remote_root_hash) = self.get_fresh_remote_hash() else {
+    async fn reconcile_with_remote_pull(&mut self) -> Option<Hash> {
+        let Some(remote_root_hash) = self.get_fresh_remote_hash().await else {
             eprintln!("Syncer cannot pull because remote root is unavailable.");
             return None;
         };
@@ -516,7 +512,7 @@ impl Syncer {
                 &mut *local_blob_repository,
                 &mut *remote_blob_repository,
                 &remote_root_hash,
-            );
+            ).await;
 
             match result {
                 Ok(0) => {
@@ -552,7 +548,7 @@ impl Syncer {
                     &*local_node_repository,
                     &*local_blob_repository,
                     &dump_dir.join("local_store_dump.txt"),
-                ) {
+                ).await {
                     eprintln!("Syncer failed to dump local store state: {}", err);
                 }
             }
@@ -561,12 +557,12 @@ impl Syncer {
         success.then_some(remote_root_hash)
     }
 
-    fn reconcile_with_merge(&mut self, local_root_hash: &Hash) -> Option<Hash> {
+    async fn reconcile_with_merge(&mut self, local_root_hash: &Hash) -> Option<Hash> {
         let Some(base_root_hash) = self.current_base_root() else {
             eprintln!("Syncer cannot merge because base root is unavailable.");
             return None;
         };
-        let Some(remote_root_hash) = self.get_fresh_remote_hash() else {
+        let Some(remote_root_hash) = self.get_fresh_remote_hash().await else {
             eprintln!("Syncer cannot merge because remote root is unavailable.");
             return None;
         };
@@ -593,7 +589,7 @@ impl Syncer {
                 &base_root_hash,
                 &local_root_hash,
                 &remote_root_hash,
-            );
+            ).await;
 
             match result {
                 Ok(0) => {
@@ -628,7 +624,7 @@ impl Syncer {
             }
 
             if success {
-                converged_root = match local_node_repository.root_hash() {
+                converged_root = match local_node_repository.root_hash().await {
                     Ok(Some(root)) => Some(root.clone()),
                     Ok(None) => {
                         eprintln!("Syncer merge reported success but local root is unavailable.");
@@ -646,7 +642,7 @@ impl Syncer {
                     &*local_node_repository,
                     &*local_blob_repository,
                     &dump_dir.join("local_store_dump.txt"),
-                ) {
+                ).await {
                     eprintln!("Syncer failed to dump local store state: {}", err);
                 }
             }
@@ -666,11 +662,11 @@ impl Syncer {
 /// but its visible tree is never broken.
 ///
 /// Returns the number of nodes transferred.
-pub fn local_push(
-    source_node_repository: &impl NodeRepository,
-    target_node_repository: &mut impl WritableNodeRepository,
-    source_blob_repository: &impl BlobRepository,
-    target_blob_repository: &mut impl WritableBlobRepository,
+pub async fn local_push(
+    source_node_repository: &(impl NodeRepository + Send + Sync),
+    target_node_repository: &(impl WritableNodeRepository + Send + Sync),
+    source_blob_repository: &(impl BlobRepository + Send + Sync),
+    target_blob_repository: &(impl WritableBlobRepository + Send + Sync),
     local_root_hash: &Hash,
 ) -> Result<usize, SyncError> {
     let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
@@ -678,32 +674,41 @@ pub fn local_push(
         target_node_repository,
         target_blob_repository,
         local_root_hash,
-    )?;
+    ).await?;
 
-    for hash in &blob_transfer_set {
-        let blob = source_blob_repository
-            .get_blob(hash)?
-            .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
-        target_blob_repository.insert(hash.clone(), blob)?;
-    }
+    // Concurrent blob transfers
+    futures::stream::iter(blob_transfer_set.into_iter())
+        .map(|hash| async move {
+            let blob = source_blob_repository
+                .get_blob(&hash).await?
+                .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
+            target_blob_repository.insert(hash.clone(), blob).await?;
+            Ok::<(), SyncError>(())
+        })
+        .buffer_unordered(10) // max_concurrent
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, SyncError>>()?;
 
     for hash in &node_transfer_set {
-        let node = node_cache.remove(hash)
-            .or_else(|| source_node_repository.get_node(hash).ok().flatten())
-            .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
-        target_node_repository.insert(hash.clone(), node)?;
+        let node = match node_cache.remove(hash) {
+            Some(n) => n,
+            None => source_node_repository.get_node(hash).await?.ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?
+        };
+        target_node_repository.insert(hash.clone(), node).await?;
     }
 
-    target_node_repository.set_root(local_root_hash.clone())?;
+    target_node_repository.set_root(local_root_hash.clone()).await?;
 
     Ok(node_transfer_set.len())
 }
 
-pub fn remote_pull(
-    local_node_repository: &mut impl WritableNodeRepository,
-    remote_node_repository: &mut impl NodeRepository,
-    local_blob_repository: &mut impl WritableBlobRepository,
-    remote_blob_repository: &mut impl BlobRepository,
+pub async fn remote_pull(
+    local_node_repository: &(impl WritableNodeRepository + Send + Sync),
+    remote_node_repository: &(impl NodeRepository + Send + Sync),
+    local_blob_repository: &(impl WritableBlobRepository + Send + Sync),
+    remote_blob_repository: &(impl BlobRepository + Send + Sync),
     remote_root_hash: &Hash,
 ) -> Result<usize, SyncError> {
     let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
@@ -711,32 +716,40 @@ pub fn remote_pull(
         local_node_repository,
         local_blob_repository,
         remote_root_hash,
-    )?;
+    ).await?;
 
-    for hash in &blob_transfer_set {
-        let blob = remote_blob_repository
-            .get_blob(hash)?
-            .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
-        local_blob_repository.insert(hash.clone(), blob)?;
-    }
+    futures::stream::iter(blob_transfer_set.into_iter())
+        .map(|hash| async move {
+            let blob = remote_blob_repository
+                .get_blob(&hash).await?
+                .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
+            local_blob_repository.insert(hash.clone(), blob).await?;
+            Ok::<(), SyncError>(())
+        })
+        .buffer_unordered(10)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, SyncError>>()?;
 
     for hash in &node_transfer_set {
-        let node = node_cache.remove(hash)
-            .or_else(|| remote_node_repository.get_node(hash).ok().flatten())
-            .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
-        local_node_repository.insert(hash.clone(), node)?;
+        let node = match node_cache.remove(hash) {
+            Some(n) => n,
+            None => remote_node_repository.get_node(hash).await?.ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?
+        };
+        local_node_repository.insert(hash.clone(), node).await?;
     }
 
-    local_node_repository.set_root(remote_root_hash.clone())?;
+    local_node_repository.set_root(remote_root_hash.clone()).await?;
 
     Ok(node_transfer_set.len())
 }
 
-fn bootstrap_pull(
-    local_node_repository: &mut impl WritableNodeRepository,
-    remote_node_repository: &mut impl NodeRepository,
-    local_blob_repository: &mut impl WritableBlobRepository,
-    remote_blob_repository: &mut impl BlobRepository,
+async fn bootstrap_pull(
+    local_node_repository: &(impl WritableNodeRepository + Send + Sync),
+    remote_node_repository: &(impl NodeRepository + Send + Sync),
+    local_blob_repository: &(impl WritableBlobRepository + Send + Sync),
+    remote_blob_repository: &(impl BlobRepository + Send + Sync),
     remote_root_hash: &Hash,
 ) -> Result<usize, SyncError> {
     let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
@@ -744,23 +757,31 @@ fn bootstrap_pull(
         local_node_repository,
         local_blob_repository,
         remote_root_hash,
-    )?;
+    ).await?;
 
-    for hash in &blob_transfer_set {
-        let blob = remote_blob_repository
-            .get_blob(hash)?
-            .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
-        local_blob_repository.insert(hash.clone(), blob)?;
-    }
+    futures::stream::iter(blob_transfer_set.into_iter())
+        .map(|hash| async move {
+            let blob = remote_blob_repository
+                .get_blob(&hash).await?
+                .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
+            local_blob_repository.insert(hash.clone(), blob).await?;
+            Ok::<(), SyncError>(())
+        })
+        .buffer_unordered(10)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, SyncError>>()?;
 
     for hash in &node_transfer_set {
-        let node = node_cache.remove(hash)
-            .or_else(|| remote_node_repository.get_node(hash).ok().flatten())
-            .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
-        local_node_repository.insert(hash.clone(), node)?;
+        let node = match node_cache.remove(hash) {
+            Some(n) => n,
+            None => remote_node_repository.get_node(hash).await?.ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?
+        };
+        local_node_repository.insert(hash.clone(), node).await?;
     }
 
-    local_node_repository.set_root(remote_root_hash.clone())?;
+    local_node_repository.set_root(remote_root_hash.clone()).await?;
 
     Ok(node_transfer_set.len())
 }

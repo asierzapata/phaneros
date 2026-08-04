@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use phaneros_sync::node::NodeWire;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -8,19 +9,12 @@ use crate::node_repository::{
 
 #[derive(Debug)]
 pub struct HttpNodeRepository {
-    agent: ureq::Agent,
+    client: reqwest::Client,
     base_url: String,
     drive_id: String,
     auth: String,
-    /// The root the client believes is currently stored, used as the `expected`
-    /// value for compare-and-swap on `set_root`. Seeded from `GET /root` at
-    /// construction, advanced on every accepted PUT, and corrected from the
-    /// store's response when a PUT loses the race (409).
-    cached_root: Option<Hash>,
-    /// Count of nodes this session has PUT to the store. The remote total is not
-    /// cheaply knowable over HTTP, so this backs `len()` purely for the syncer's
-    /// transfer-count logging.
-    inserted: usize,
+    cached_root: std::sync::RwLock<Option<Hash>>,
+    inserted: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Deserialize)]
@@ -45,22 +39,20 @@ struct PutRootBody<'a> {
 }
 
 impl HttpNodeRepository {
-    pub fn new(
+    pub async fn new(
         base_url: impl Into<String>,
         drive_id: impl Into<String>,
         token: impl AsRef<str>,
     ) -> Self {
-        let mut repo = Self {
-            agent: ureq::Agent::new(),
+        let repo = Self {
+            client: reqwest::Client::new(),
             base_url: base_url.into(),
             drive_id: drive_id.into(),
             auth: format!("Bearer {}", token.as_ref()),
-            cached_root: None,
-            inserted: 0,
+            cached_root: std::sync::RwLock::new(None),
+            inserted: std::sync::atomic::AtomicUsize::new(0),
         };
-        // Best-effort seed of the expected root. If the store is unreachable or
-        // has no root yet we start from None. Any subsequent 409 corrects it.
-        let _ = repo.refresh_root();
+        let _ = repo.refresh_root().await;
         repo
     }
 
@@ -75,113 +67,129 @@ impl HttpNodeRepository {
         format!("{}/api/drives/{}/root", self.base_url, self.drive_id)
     }
 
-    pub fn refresh_root(&mut self) -> Result<Option<String>, NodeRepositoryError> {
-        match self.fetch_root() {
+    pub async fn refresh_root(&self) -> Result<Option<String>, NodeRepositoryError> {
+        match self.fetch_root().await {
             Ok(root) => {
-                self.cached_root = root;
-                Ok(self.cached_root.clone())
+                *self.cached_root.write().unwrap() = root.clone();
+                Ok(root)
             }
             Err(err) => Err(err),
         }
     }
 
-    fn fetch_root(&self) -> Result<Option<Hash>, NodeRepositoryError> {
-        match self
-            .agent
+    async fn fetch_root(&self) -> Result<Option<Hash>, NodeRepositoryError> {
+        let resp = self
+            .client
             .get(&self.root_url())
-            .set("Authorization", &self.auth)
-            .call()
-        {
-            Ok(response) => {
-                let body: RootResponse = response
-                    .into_json()
+            .header("Authorization", &self.auth)
+            .send()
+            .await
+            .map_err(|_| NodeRepositoryError::RootRetrieveFailed)?;
+
+        match resp.status().as_u16() {
+            200 => {
+                let body: RootResponse = resp
+                    .json()
+                    .await
                     .map_err(|_| NodeRepositoryError::RootRetrieveFailed)?;
                 Ok(body.hash)
             }
-            Err(ureq::Error::Status(404, _)) => Ok(None),
-            Err(_) => Err(NodeRepositoryError::RootRetrieveFailed),
+            404 => Ok(None),
+            _ => Err(NodeRepositoryError::RootRetrieveFailed),
         }
     }
 
-    pub fn insert(&mut self, hash: Hash, node: Node) -> Result<(), NodeRepositoryError> {
-        match self
-            .agent
+    pub async fn insert_internal(&self, hash: Hash, node: Node) -> Result<(), NodeRepositoryError> {
+        let resp = self
+            .client
             .put(&self.nodes_url(&hash))
-            .set("Authorization", &self.auth)
-            .send_json(&node)
-        {
-            Ok(_) => {
-                self.inserted += 1;
-                Ok(())
-            }
-            Err(_) => Err(NodeRepositoryError::InsertFailed(hash)),
+            .header("Authorization", &self.auth)
+            .json(&node)
+            .send()
+            .await
+            .map_err(|_| NodeRepositoryError::InsertFailed(hash.clone()))?;
+
+        if resp.status().is_success() {
+            self.inserted
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        } else {
+            Err(NodeRepositoryError::InsertFailed(hash))
         }
     }
 
-    pub fn set_root(&mut self, hash: Hash) -> Result<(), NodeRepositoryError> {
+    pub async fn set_root_internal(&self, hash: Hash) -> Result<(), NodeRepositoryError> {
+        let cached = self.cached_root.read().unwrap().clone();
         let body = PutRootBody {
             hash: &hash,
-            expected: self.cached_root.as_ref(),
+            expected: cached.as_ref(),
         };
-        match self
-            .agent
+        let resp = self
+            .client
             .put(&self.root_url())
-            .set("Authorization", &self.auth)
-            .send_json(&body)
-        {
-            Ok(_) => {
-                self.cached_root = Some(hash);
+            .header("Authorization", &self.auth)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|_| NodeRepositoryError::SetRootFailed(hash.clone()))?;
+
+        match resp.status().as_u16() {
+            200 | 201 | 204 => {
+                *self.cached_root.write().unwrap() = Some(hash);
                 Ok(())
             }
-            Err(ureq::Error::Status(409, response)) => {
-                // This error signals a lost race, so we have to adopt the store's
-                // expected so the next reconcile can succeed, and surface a
-                // current root as the new distinct error so the caller does not retry this PUT.
-                let actual = response
-                    .into_json::<RootResponse>()
+            409 => {
+                let actual = resp
+                    .json::<RootResponse>()
+                    .await
                     .ok()
                     .and_then(|body| body.hash);
-                self.cached_root = actual.clone();
+                *self.cached_root.write().unwrap() = actual.clone();
                 Err(NodeRepositoryError::RootConflict { actual })
             }
-            Err(_) => Err(NodeRepositoryError::SetRootFailed(hash)),
+            _ => Err(NodeRepositoryError::SetRootFailed(hash)),
         }
     }
 
     pub fn len(&self) -> usize {
-        self.inserted
+        self.inserted.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inserted == 0
+        self.len() == 0
     }
 }
 
+#[async_trait]
 impl NodeRepository for HttpNodeRepository {
-    fn root_hash(&self) -> Result<Option<&Hash>, NodeRepositoryError> {
-        Ok(self.cached_root.as_ref())
+    async fn root_hash(&self) -> Result<Option<Hash>, NodeRepositoryError> {
+        Ok(self.cached_root.read().unwrap().clone())
     }
 
-    fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeRepositoryError> {
-        match self
-            .agent
+    async fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeRepositoryError> {
+        let resp = self
+            .client
             .get(&self.nodes_url(hash))
-            .set("Authorization", &self.auth)
-            .call()
-        {
-            Ok(response) => {
-                let wire: NodeWire = response
-                    .into_json()
+            .header("Authorization", &self.auth)
+            .send()
+            .await
+            .map_err(|_| NodeRepositoryError::NodeRetrieveFailed(hash.clone()))?;
+
+        match resp.status().as_u16() {
+            200 => {
+                let wire: NodeWire = resp
+                    .json()
+                    .await
                     .map_err(|_| NodeRepositoryError::NodeRetrieveFailed(hash.clone()))?;
                 let (_, node) = wire.reconstruct();
                 Ok(Some(node))
             }
-            Err(ureq::Error::Status(404, _)) => Ok(None),
-            Err(_) => Err(NodeRepositoryError::NodeRetrieveFailed(hash.clone())),
+            404 => Ok(None),
+            _ => Err(NodeRepositoryError::NodeRetrieveFailed(hash.clone())),
         }
     }
 
-    fn get_missing(&self, hashes: &[Hash]) -> Result<HashSet<Hash>, NodeRepositoryError> {
+    async fn get_missing(&self, hashes: &[Hash]) -> Result<HashSet<Hash>, NodeRepositoryError> {
         if hashes.is_empty() {
             return Ok(HashSet::new());
         }
@@ -192,17 +200,23 @@ impl NodeRepository for HttpNodeRepository {
         );
         let payload = serde_json::json!({ "hashes": hashes });
 
-        let response = self
-            .agent
+        let resp = self
+            .client
             .post(&url)
-            .set("Authorization", &self.auth)
-            .send_json(payload)
+            .header("Authorization", &self.auth)
+            .json(&payload)
+            .send()
+            .await
             .map_err(|e| {
                 eprintln!("[http-node] get_missing err={:?}", e);
                 NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
             })?;
 
-        let body: MissingResponse = response.into_json().map_err(|e| {
+        if !resp.status().is_success() {
+            return Err(NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone()));
+        }
+
+        let body: MissingResponse = resp.json().await.map_err(|e| {
             eprintln!("[http-node] get_missing parse err={:?}", e);
             NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
         })?;
@@ -210,7 +224,10 @@ impl NodeRepository for HttpNodeRepository {
         Ok(body.missing)
     }
 
-    fn get_nodes_batch(&self, hashes: &[Hash]) -> Result<HashMap<Hash, Node>, NodeRepositoryError> {
+    async fn get_nodes_batch(
+        &self,
+        hashes: &[Hash],
+    ) -> Result<HashMap<Hash, Node>, NodeRepositoryError> {
         if hashes.is_empty() {
             return Ok(HashMap::new());
         }
@@ -218,17 +235,23 @@ impl NodeRepository for HttpNodeRepository {
         let url = format!("{}/api/drives/{}/nodes/batch", self.base_url, self.drive_id);
         let payload = serde_json::json!({ "hashes": hashes });
 
-        let response = self
-            .agent
+        let resp = self
+            .client
             .post(&url)
-            .set("Authorization", &self.auth)
-            .send_json(payload)
+            .header("Authorization", &self.auth)
+            .json(&payload)
+            .send()
+            .await
             .map_err(|e| {
                 eprintln!("[http-node] get_nodes_batch err={:?}", e);
                 NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
             })?;
 
-        let body: BatchResponse = response.into_json().map_err(|e| {
+        if !resp.status().is_success() {
+            return Err(NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone()));
+        }
+
+        let body: BatchResponse = resp.json().await.map_err(|e| {
             eprintln!("[http-node] get_nodes_batch parse err={:?}", e);
             NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
         })?;
@@ -243,12 +266,13 @@ impl NodeRepository for HttpNodeRepository {
     }
 }
 
+#[async_trait]
 impl WritableNodeRepository for HttpNodeRepository {
-    fn insert(&mut self, hash: Hash, node: Node) -> Result<(), NodeRepositoryError> {
-        HttpNodeRepository::insert(self, hash, node)
+    async fn insert(&self, hash: Hash, node: Node) -> Result<(), NodeRepositoryError> {
+        self.insert_internal(hash, node).await
     }
 
-    fn set_root(&mut self, hash: Hash) -> Result<(), NodeRepositoryError> {
-        HttpNodeRepository::set_root(self, hash)
+    async fn set_root(&self, hash: Hash) -> Result<(), NodeRepositoryError> {
+        self.set_root_internal(hash).await
     }
 }

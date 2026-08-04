@@ -32,8 +32,8 @@ pub fn decompress_blob(bytes: &[u8], compression: &str) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_compress_and_decompress_compressible_data() {
+    #[tokio::test]
+    async fn test_compress_and_decompress_compressible_data() {
         let input = "hello world ".repeat(100).into_bytes();
 
         let (compressed, algo) = compress_blob(&input);
@@ -44,8 +44,8 @@ mod tests {
         assert_eq!(input, decompressed);
     }
 
-    #[test]
-    fn test_uncompressible_fallback() {
+    #[tokio::test]
+    async fn test_uncompressible_fallback() {
         let input = vec![1, 2, 3, 4, 5];
         let (output, algo) = compress_blob(&input);
 

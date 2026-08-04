@@ -1,8 +1,4 @@
-use std::{
-    io::{BufRead, BufReader},
-    thread,
-    time::Duration,
-};
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -33,39 +29,85 @@ pub fn spawn_remote_listener<F>(
     drive_id: String,
     token: String,
     mut on_event: F,
-) -> thread::JoinHandle<()>
+) -> tokio::task::JoinHandle<()>
 where
     F: FnMut(RemoteListenerEvent) + Send + 'static,
 {
-    thread::spawn(move || {
+    tokio::spawn(async move {
         let events_url = format!(
             "{}/api/drives/{}/events",
             base_url.trim_end_matches('/'),
             drive_id
         );
         let auth = format!("Bearer {}", token);
-        let agent = ureq::Agent::new();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(0)) // disable timeout for SSE
+            .build()
+            .unwrap();
         let mut last_event_id: Option<i64> = None;
         let mut backoff_index = 0usize;
 
         loop {
-            let mut request = agent
+            let mut request = client
                 .get(&events_url)
-                .set("Authorization", &auth)
-                .set("Accept", "text/event-stream");
+                .header("Authorization", &auth)
+                .header("Accept", "text/event-stream");
 
             if let Some(id) = last_event_id {
-                request = request.set("Last-Event-ID", &id.to_string());
+                request = request.header("Last-Event-ID", id.to_string());
             }
 
-            match request.call() {
-                Ok(response) => {
+            match request.send().await {
+                Ok(mut response) => {
                     backoff_index = 0;
-                    parse_event_stream(
-                        BufReader::new(response.into_reader()),
-                        &mut last_event_id,
-                        &mut on_event,
-                    );
+
+                    let mut event_type = String::new();
+                    let mut event_id: Option<i64> = None;
+                    let mut data_lines: Vec<String> = Vec::new();
+                    let mut buf = Vec::new();
+
+                    while let Ok(Some(chunk)) = response.chunk().await {
+                        buf.extend_from_slice(&chunk);
+
+                        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                            let mut line = String::from_utf8_lossy(&buf[..pos]).to_string();
+                            buf.drain(..pos + 1);
+
+                            while line.ends_with('\n') || line.ends_with('\r') {
+                                line.pop();
+                            }
+
+                            if line.is_empty() {
+                                dispatch_event_frame(&event_type, event_id, &data_lines, &mut last_event_id, &mut on_event);
+                                event_type.clear();
+                                event_id = None;
+                                data_lines.clear();
+                                continue;
+                            }
+
+                            if line.starts_with(':') {
+                                continue;
+                            }
+
+                            let (field, value) = match line.split_once(':') {
+                                Some((field, value)) => (field, value.strip_prefix(' ').unwrap_or(value)),
+                                None => (line.as_str(), ""),
+                            };
+
+                            match field {
+                                "event" => {
+                                    event_type.clear();
+                                    event_type.push_str(value);
+                                }
+                                "id" => {
+                                    event_id = value.parse::<i64>().ok().filter(|id| *id >= 0);
+                                }
+                                "data" => data_lines.push(value.to_string()),
+                                _ => {}
+                            }
+                        }
+                    }
+
                     eprintln!("SSE stream disconnected; reconnecting...");
                 }
                 Err(err) => {
@@ -77,43 +119,29 @@ where
             if backoff_index + 1 < RECONNECT_BACKOFF_STEPS.len() {
                 backoff_index += 1;
             }
-            thread::sleep(sleep_for);
+            tokio::time::sleep(sleep_for).await;
         }
     })
 }
 
-pub(crate) fn parse_event_stream<R, F>(
-    mut reader: R,
-    last_event_id: &mut Option<i64>,
-    on_event: &mut F,
-) where
-    R: BufRead,
+pub fn parse_event_stream<R, F>(reader: R, last_event_id: &mut Option<i64>, mut on_event: F)
+where
+    R: std::io::BufRead,
     F: FnMut(RemoteListenerEvent),
 {
     let mut event_type = String::new();
-    let mut event_id: Option<i64> = None;
+    let mut event_id = None;
     let mut data_lines: Vec<String> = Vec::new();
 
-    loop {
-        let mut line = String::new();
-        let bytes = match reader.read_line(&mut line) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                eprintln!("SSE read error: {err}");
-                return;
-            }
-        };
-
-        if bytes == 0 {
-            return;
-        }
-
-        while line.ends_with('\n') || line.ends_with('\r') {
-            line.pop();
-        }
-
+    for line in reader.lines().flatten() {
         if line.is_empty() {
-            dispatch_event_frame(&event_type, event_id, &data_lines, last_event_id, on_event);
+            dispatch_event_frame(
+                &event_type,
+                event_id,
+                &data_lines,
+                last_event_id,
+                &mut on_event,
+            );
             event_type.clear();
             event_id = None;
             data_lines.clear();
@@ -125,7 +153,7 @@ pub(crate) fn parse_event_stream<R, F>(
         }
 
         let (field, value) = match line.split_once(':') {
-            Some((field, value)) => (field, value.strip_prefix(' ').unwrap_or(value)),
+            Some((f, v)) => (f, v.strip_prefix(' ').unwrap_or(v)),
             None => (line.as_str(), ""),
         };
 
@@ -140,6 +168,16 @@ pub(crate) fn parse_event_stream<R, F>(
             "data" => data_lines.push(value.to_string()),
             _ => {}
         }
+    }
+
+    if !event_type.is_empty() || !data_lines.is_empty() {
+        dispatch_event_frame(
+            &event_type,
+            event_id,
+            &data_lines,
+            last_event_id,
+            &mut on_event,
+        );
     }
 }
 

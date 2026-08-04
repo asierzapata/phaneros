@@ -57,11 +57,12 @@ enum Commands {
     },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     if let Some(Commands::Stats { drive_id, json }) = cli.command {
-        print_stats(drive_id.as_deref(), json);
+        print_stats(drive_id.as_deref(), json).await;
         return;
     }
 
@@ -120,32 +121,20 @@ fn main() {
     .with_telemetry(config.daemon.enable_telemetry);
 
     let engine = SyncEngine::new(engine_config);
-    if let Err(err) = engine.run() {
+    if let Err(err) = engine.run().await {
         eprintln!("Phaneros engine error: {err}");
         std::process::exit(1);
     }
 }
 
-fn print_stats(drive_id: Option<&str>, json: bool) {
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
+async fn print_stats(drive_id: Option<&str>, json: bool) {
+    let db = match MetricsDatabase::connect_default().await {
+        Ok(db) => db,
         Err(err) => {
-            eprintln!("Failed to initialize runtime: {err}");
+            eprintln!("Failed to open metrics database: {err}");
             std::process::exit(1);
         }
     };
-
-    rt.block_on(async {
-        let db = match MetricsDatabase::connect_default().await {
-            Ok(db) => db,
-            Err(err) => {
-                eprintln!("Failed to open metrics database: {err}");
-                std::process::exit(1);
-            }
-        };
 
         let stats = match db.get_aggregate_stats(drive_id).await {
             Ok(s) => s,
@@ -171,7 +160,6 @@ fn print_stats(drive_id: Option<&str>, json: bool) {
         println!("Compression Efficiency:  {:.2}% savings", stats.overall_compression_ratio_pct);
         println!("Average Upload Speed:    {}", format_speed(stats.avg_upload_rate_bps));
         println!("=========================================");
-    });
 }
 
 fn format_bytes(bytes: u64) -> String {

@@ -49,9 +49,9 @@ impl MaterializeStats {
     }
 }
 
-pub fn materialize(
-    node_repository: &impl NodeRepository,
-    blob_repository: &impl BlobRepository,
+pub async fn materialize(
+    node_repository: &(impl NodeRepository + Send + Sync),
+    blob_repository: &(impl BlobRepository + Send + Sync),
     vault_path: &Path,
     trash_batch: &Path,
     from_root: Option<&Hash>,
@@ -65,7 +65,7 @@ pub fn materialize(
         stats: MaterializeStats::default(),
     };
 
-    materializer.sync_folder(from_root, to_root, Path::new(""))?;
+    materializer.sync_folder(from_root, to_root, Path::new("")).await?;
 
     Ok(materializer.stats)
 }
@@ -91,23 +91,24 @@ struct Materializer<'a, N: NodeRepository, B: BlobRepository> {
 }
 
 impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
-    fn sync_folder(
-        &mut self,
-        from: Option<&Hash>,
-        to: &Hash,
-        rel_dir: &Path,
-    ) -> Result<(), MaterializeError> {
-        if from == Some(to) {
-            return Ok(());
-        }
+    fn sync_folder<'b>(
+        &'b mut self,
+        from: Option<&'b Hash>,
+        to: &'b Hash,
+        rel_dir: &'b Path,
+    ) -> futures::future::BoxFuture<'b, Result<(), MaterializeError>> {
+        Box::pin(async move {
+            if from == Some(to) {
+                return Ok(());
+            }
 
-        self.create_dir(&self.vault_path.join(rel_dir))?;
+            self.create_dir(&self.vault_path.join(rel_dir))?;
 
-        let from_entries = match from {
-            Some(hash) => self.folder_entries(hash)?,
-            None => HashMap::new(),
-        };
-        let to_entries = self.folder_entries(to)?;
+            let from_entries = match from {
+                Some(hash) => self.folder_entries(hash).await?,
+                None => HashMap::new(),
+            };
+            let to_entries = self.folder_entries(to).await?;
 
         let mut names = BTreeSet::new();
         names.extend(from_entries.keys().cloned());
@@ -141,13 +142,13 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
                             let from_folder = from_entry
                                 .filter(|entry| entry.kind == EntryKind::Folder)
                                 .map(|entry| &entry.hash);
-                            self.sync_folder(from_folder, &to_entry.hash, &rel_path)?;
+                            self.sync_folder(from_folder, &to_entry.hash, &rel_path).await?;
                         }
                         EntryKind::File => {
                             let from_file = from_entry
                                 .filter(|entry| entry.kind == EntryKind::File)
                                 .map(|entry| &entry.hash);
-                            self.write_file(&to_entry.hash, from_file, &path, &rel_path)?;
+                            self.write_file(&to_entry.hash, from_file, &path, &rel_path).await?;
                         }
                     }
                 }
@@ -157,9 +158,10 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
         }
 
         Ok(())
+        })
     }
 
-    fn write_file(
+    async fn write_file(
         &mut self,
         to_hash: &Hash,
         from_hash: Option<&Hash>,
@@ -168,14 +170,14 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
     ) -> Result<(), MaterializeError> {
         // Whatever is on disk is only safe to overwrite if it still holds the
         // content `from` claims.
-        if path.exists() && !self.get_disk_matches_hash(path, from_hash)? {
-            if self.get_disk_matches_hash(path, Some(to_hash))? {
+        if path.exists() && !self.get_disk_matches_hash(path, from_hash).await? {
+            if self.get_disk_matches_hash(path, Some(to_hash)).await? {
                 return Ok(());
             }
             self.trash_path(path, rel_path)?;
         }
 
-        let bytes = self.file_bytes(to_hash)?;
+        let bytes = self.file_bytes(to_hash).await?;
         write_atomic(path, &bytes).map_err(|source| MaterializeError::Io {
             path: path.display().to_string(),
             source,
@@ -185,7 +187,7 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
         Ok(())
     }
 
-    fn get_disk_matches_hash(
+    async fn get_disk_matches_hash(
         &self,
         path: &Path,
         from_hash: Option<&Hash>,
@@ -202,7 +204,7 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
             return Ok(false);
         }
 
-        let Some(expected_size) = self.file_size(from_hash)? else {
+        let Some(expected_size) = self.file_size(from_hash).await? else {
             return Ok(false);
         };
         if metadata.len() != expected_size {
@@ -247,10 +249,10 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
         Ok(())
     }
 
-    fn folder_entries(&self, hash: &Hash) -> Result<HashMap<String, EntryRef>, MaterializeError> {
+    async fn folder_entries(&self, hash: &Hash) -> Result<HashMap<String, EntryRef>, MaterializeError> {
         let node = self
             .node_repository
-            .get_node(hash)?
+            .get_node(hash).await?
             .ok_or_else(|| MaterializeError::MissingNode { hash: hash.clone() })?;
 
         let Node::Folder { folders, files } = node else {
@@ -280,15 +282,15 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
         Ok(entries)
     }
 
-    fn file_bytes(&self, hash: &Hash) -> Result<Vec<u8>, MaterializeError> {
-        let blobs = self.file_blobs(hash)?;
+    async fn file_bytes(&self, hash: &Hash) -> Result<Vec<u8>, MaterializeError> {
+        let blobs = self.file_blobs(hash).await?;
         let total: u64 = blobs.iter().map(|blob_ref| blob_ref.size).sum();
 
         let mut bytes = Vec::with_capacity(total as usize);
         for blob_ref in blobs {
             let blob = self
                 .blob_repository
-                .get_blob(&blob_ref.hash)?
+                .get_blob(&blob_ref.hash).await?
                 .ok_or_else(|| MaterializeError::MissingBlob {
                     hash: blob_ref.hash.clone(),
                 })?;
@@ -298,20 +300,20 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
         Ok(bytes)
     }
 
-    fn file_size(&self, hash: &Hash) -> Result<Option<u64>, MaterializeError> {
-        match self.node_repository.get_node(hash)? {
+    async fn file_size(&self, hash: &Hash) -> Result<Option<u64>, MaterializeError> {
+        match self.node_repository.get_node(hash).await? {
             Some(Node::File { blobs }) => Ok(Some(blobs.iter().map(|blob| blob.size).sum())),
             _ => Ok(None),
         }
     }
 
-    fn file_blobs(
+    async fn file_blobs(
         &self,
         hash: &Hash,
     ) -> Result<Vec<crate::blob_repository::BlobRef>, MaterializeError> {
         let node = self
             .node_repository
-            .get_node(hash)?
+            .get_node(hash).await?
             .ok_or_else(|| MaterializeError::MissingNode { hash: hash.clone() })?;
 
         match node {

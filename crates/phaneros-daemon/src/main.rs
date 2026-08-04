@@ -39,7 +39,8 @@ struct DaemonCli {
     dump_store: Option<PathBuf>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = DaemonCli::parse();
 
     println!("Starting Phaneros daemon (phanerosd)...");
@@ -99,7 +100,7 @@ fn main() {
     );
 
     let engine = SyncEngine::new(engine_config);
-    if let Err(err) = engine.run() {
+    if let Err(err) = engine.run().await {
         eprintln!("Phaneros daemon error: {err}");
         std::process::exit(1);
     }

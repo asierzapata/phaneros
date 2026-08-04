@@ -83,8 +83,8 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    #[test]
-    fn test_default_ignore_patterns_without_git() {
+    #[tokio::test]
+    async fn test_default_ignore_patterns_without_git() {
         let dir = tempdir().unwrap();
         let filter = IgnoreFilter::new(dir.path());
 
@@ -98,8 +98,8 @@ mod tests {
         assert!(!filter.is_ignored(&dir.path().join("main.rs"), false));
     }
 
-    #[test]
-    fn test_custom_phanerosignore_patterns() {
+    #[tokio::test]
+    async fn test_custom_phanerosignore_patterns() {
         let dir = tempdir().unwrap();
 
         let ignore_content = "*.log\nbuild/\nsecret.txt";
@@ -114,8 +114,8 @@ mod tests {
         assert!(!filter.is_ignored(&dir.path().join("app.rs"), false));
     }
 
-    #[test]
-    fn test_nested_gitignore_patterns() {
+    #[tokio::test]
+    async fn test_nested_gitignore_patterns() {
         let dir = tempdir().unwrap();
         let sub = dir.path().join("subfolder");
         fs::create_dir_all(&sub).unwrap();

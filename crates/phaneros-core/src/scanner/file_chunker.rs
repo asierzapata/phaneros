@@ -61,9 +61,9 @@ impl FileChunker {
     pub fn chunk_file(&self, path: &Path) -> Result<Vec<BlobRef>, FileChunkerError> {
         read_chunks(path, self.config, |blob_ref, bytes| {
             self.blob_repository
-                .write()
+                .read()
                 .unwrap()
-                .insert(
+                .insert_internal(
                     blob_ref.hash.clone(),
                     Blob {
                         bytes: bytes.to_vec(),
