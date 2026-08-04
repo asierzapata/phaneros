@@ -81,7 +81,7 @@ impl Watcher {
 
         let debouncer_tx = event_tx.clone();
         let mut debouncer = new_debouncer(
-            Duration::from_secs(5),
+            Duration::from_millis(300),
             None,
             move |result: DebounceEventResult| match result {
                 Ok(_) => {

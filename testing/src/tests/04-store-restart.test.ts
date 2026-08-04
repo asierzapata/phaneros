@@ -15,7 +15,10 @@ describe('Store Server Crash & Reconnect Recovery', () => {
     harness = await TestHarness.create();
   });
 
-  afterEach(async () => {
+  afterEach(async (ctx) => {
+    if (ctx.task?.result?.state === 'fail') {
+      await harness.dumpLogsOnFailure();
+    }
     await harness.teardown();
   });
 

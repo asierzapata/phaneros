@@ -41,7 +41,6 @@ where
         );
         let auth = format!("Bearer {}", token);
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(0)) // disable timeout for SSE
             .build()
             .unwrap();
         let mut last_event_id: Option<i64> = None;
