@@ -1,5 +1,5 @@
 import { createServer } from 'node:net';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import type { ManagedProcess } from './types.js';
 
 export async function sleep(ms: number): Promise<void> {
@@ -101,6 +101,29 @@ export async function waitForBufferMatch(
   return actualBuffer;
 }
 
+export async function waitForDirectoryFileCount(
+  dirPath: string,
+  expectedCount: number,
+  timeoutMs = 15000
+): Promise<number> {
+  let fileCount = 0;
+  await waitForCondition(
+    async () => {
+      try {
+        const entries = await readdir(dirPath, { recursive: true, withFileTypes: true });
+        fileCount = entries.filter((entry) => entry.isFile()).length;
+        return fileCount >= expectedCount;
+      } catch {
+        return false;
+      }
+    },
+    timeoutMs,
+    150,
+    `directory ${dirPath} to contain at least ${expectedCount} files (current: ${fileCount})`
+  );
+  return fileCount;
+}
+
 export async function waitForServer(port: number, timeoutMs = 10000): Promise<void> {
   await waitForCondition(
     async () => {
@@ -145,3 +168,4 @@ export async function dumpLogs(managedProcs: ManagedProcess[]): Promise<void> {
     }
   }
 }
+

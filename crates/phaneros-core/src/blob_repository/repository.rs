@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use std::collections::HashSet;
+
 use crate::blob_repository::{Blob, Hash};
 
 #[derive(Debug, Error)]
@@ -17,6 +19,18 @@ pub enum BlobRepositoryError {
 pub trait BlobRepository {
     fn get_blob(&self, hash: &Hash) -> Result<Option<Blob>, BlobRepositoryError>;
     fn contains(&self, hash: &Hash) -> Result<bool, BlobRepositoryError>;
+    
+    /// Returns the subset of `hashes` that this repository does NOT hold.
+    /// Default implementation probes one at a time (used by InMemory).
+    fn get_missing(&self, hashes: &[Hash]) -> Result<HashSet<Hash>, BlobRepositoryError> {
+        let mut missing = HashSet::new();
+        for h in hashes {
+            if !self.contains(h)? {
+                missing.insert(h.clone());
+            }
+        }
+        Ok(missing)
+    }
 }
 
 /// A blob store that can also be written to. The syncer reads both sides

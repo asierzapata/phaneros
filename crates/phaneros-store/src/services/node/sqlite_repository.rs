@@ -126,6 +126,67 @@ impl NodeRepository for SqliteNodeRepository {
         Ok(())
     }
 
+    async fn get_missing_nodes(
+        &self,
+        drive_id: &str,
+        hashes: &[Hash],
+    ) -> Result<Vec<Hash>, NodeRepositoryError> {
+        if hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = hashes.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT hash FROM nodes WHERE drive_id = ? AND hash IN ({})",
+            placeholders
+        );
+
+        let mut query = sqlx::query_scalar::<_, String>(&sql).bind(drive_id);
+        for hash in hashes {
+            query = query.bind(hash.as_str());
+        }
+
+        let found: Vec<String> = query.fetch_all(&self.pool).await?;
+        let found_set: std::collections::HashSet<_> = found.into_iter().collect();
+
+        Ok(hashes
+            .iter()
+            .filter(|h| !found_set.contains(h.as_str()))
+            .cloned()
+            .collect())
+    }
+
+    async fn get_nodes_batch(
+        &self,
+        drive_id: &str,
+        hashes: &[Hash],
+    ) -> Result<std::collections::HashMap<Hash, Node>, NodeRepositoryError> {
+        if hashes.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let placeholders = hashes.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT hash, data FROM nodes WHERE drive_id = ? AND hash IN ({})",
+            placeholders
+        );
+
+        let mut query = sqlx::query_as::<_, (String, String)>(&sql).bind(drive_id);
+        for hash in hashes {
+            query = query.bind(hash.as_str());
+        }
+
+        let rows = query.fetch_all(&self.pool).await?;
+
+        let mut result = std::collections::HashMap::new();
+        for (hash_str, json) in rows {
+            let (_, node) = serde_json::from_str::<NodeWire>(&json)?.reconstruct();
+            result.insert(hash_str.into(), node);
+        }
+
+        Ok(result)
+    }
+
     async fn list_versions(&self, drive_id: &str) -> Result<Vec<Version>, NodeRepositoryError> {
         let rows: Vec<(String, i64)> = sqlx::query_as(
             "SELECT root_hash, at FROM versions WHERE drive_id = ? ORDER BY id DESC",
@@ -348,5 +409,39 @@ mod tests {
             .unwrap();
         assert_eq!(after_first_drive_a.len(), 1);
         assert_eq!(after_first_drive_a[0].id, drive_a_v2.id);
+    }
+
+    #[tokio::test]
+    async fn get_missing_nodes_returns_only_absent_hashes() {
+        let repo = repo().await;
+        let (hash1, node1) = Node::file(vec![BlobRef::from_bytes(b"one")]);
+        let (hash2, _) = Node::file(vec![BlobRef::from_bytes(b"two")]);
+        
+        repo.put_node("drive", hash1.clone(), node1).await.unwrap();
+
+        let missing = repo
+            .get_missing_nodes("drive", &[hash1.clone(), hash2.clone()])
+            .await
+            .unwrap();
+        
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0], hash2);
+    }
+
+    #[tokio::test]
+    async fn get_nodes_batch_returns_only_present_nodes() {
+        let repo = repo().await;
+        let (hash1, node1) = Node::file(vec![BlobRef::from_bytes(b"one")]);
+        let (hash2, _) = Node::file(vec![BlobRef::from_bytes(b"two")]);
+        
+        repo.put_node("drive", hash1.clone(), node1.clone()).await.unwrap();
+
+        let batch = repo
+            .get_nodes_batch("drive", &[hash1.clone(), hash2.clone()])
+            .await
+            .unwrap();
+        
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch.get(&hash1).unwrap(), &node1);
     }
 }

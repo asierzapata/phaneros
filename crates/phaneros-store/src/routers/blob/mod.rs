@@ -4,6 +4,7 @@ mod download_blob_route_handler;
 mod head_or_get_blob_route_handler;
 mod upload_blob_bytes_route_handler;
 mod upload_blob_route_handler;
+mod post_missing_blobs_route_handler;
 
 use axum::{
     Router,
@@ -16,11 +17,14 @@ use download_blob_route_handler::download_blob;
 use head_or_get_blob_route_handler::head_or_get_blob;
 use upload_blob_bytes_route_handler::upload_blob_bytes;
 use upload_blob_route_handler::upload_blob;
+use post_missing_blobs_route_handler::post_missing_blobs;
 
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        // TODO: migrate to QUERY method once axum supports it (tracking: axum#3801)
+        .route("/missing", post(post_missing_blobs))
         .route("/{hash}", head(head_or_get_blob))
         .route("/{hash}/upload", post(upload_blob))
         .route("/{hash}/commit", post(commit_blob))

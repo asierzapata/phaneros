@@ -673,7 +673,7 @@ pub fn local_push(
     target_blob_repository: &mut impl WritableBlobRepository,
     local_root_hash: &Hash,
 ) -> Result<usize, SyncError> {
-    let (node_transfer_set, blob_transfer_set) = compute_unidirectional_diff(
+    let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
         source_node_repository,
         target_node_repository,
         target_blob_repository,
@@ -688,8 +688,8 @@ pub fn local_push(
     }
 
     for hash in &node_transfer_set {
-        let node = source_node_repository
-            .get_node(hash)?
+        let node = node_cache.remove(hash)
+            .or_else(|| source_node_repository.get_node(hash).ok().flatten())
             .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
         target_node_repository.insert(hash.clone(), node)?;
     }
@@ -706,7 +706,7 @@ pub fn remote_pull(
     remote_blob_repository: &mut impl BlobRepository,
     remote_root_hash: &Hash,
 ) -> Result<usize, SyncError> {
-    let (node_transfer_set, blob_transfer_set) = compute_unidirectional_diff(
+    let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
         remote_node_repository,
         local_node_repository,
         local_blob_repository,
@@ -721,8 +721,8 @@ pub fn remote_pull(
     }
 
     for hash in &node_transfer_set {
-        let node = remote_node_repository
-            .get_node(hash)?
+        let node = node_cache.remove(hash)
+            .or_else(|| remote_node_repository.get_node(hash).ok().flatten())
             .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
         local_node_repository.insert(hash.clone(), node)?;
     }
@@ -739,7 +739,7 @@ fn bootstrap_pull(
     remote_blob_repository: &mut impl BlobRepository,
     remote_root_hash: &Hash,
 ) -> Result<usize, SyncError> {
-    let (node_transfer_set, blob_transfer_set) = compute_unidirectional_diff(
+    let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
         remote_node_repository,
         local_node_repository,
         local_blob_repository,
@@ -754,8 +754,8 @@ fn bootstrap_pull(
     }
 
     for hash in &node_transfer_set {
-        let node = remote_node_repository
-            .get_node(hash)?
+        let node = node_cache.remove(hash)
+            .or_else(|| remote_node_repository.get_node(hash).ok().flatten())
             .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
         local_node_repository.insert(hash.clone(), node)?;
     }

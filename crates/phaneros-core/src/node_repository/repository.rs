@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use std::collections::{HashMap, HashSet};
+
 use crate::node_repository::{Hash, Node};
 
 #[derive(Debug, Error, PartialEq)]
@@ -24,6 +26,30 @@ pub enum NodeRepositoryError {
 pub trait NodeRepository {
     fn root_hash(&self) -> Result<Option<&Hash>, NodeRepositoryError>;
     fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeRepositoryError>;
+
+    /// Returns the subset of `hashes` that this repository does NOT hold.
+    /// Default implementation probes one at a time (used by InMemory).
+    fn get_missing(&self, hashes: &[Hash]) -> Result<HashSet<Hash>, NodeRepositoryError> {
+        let mut missing = HashSet::new();
+        for h in hashes {
+            if self.get_node(h)?.is_none() {
+                missing.insert(h.clone());
+            }
+        }
+        Ok(missing)
+    }
+
+    /// Fetches multiple nodes in a single call. Returns a map of hash→Node for nodes that exist.
+    /// Default implementation fetches one at a time (used by InMemory).
+    fn get_nodes_batch(&self, hashes: &[Hash]) -> Result<HashMap<Hash, Node>, NodeRepositoryError> {
+        let mut nodes = HashMap::new();
+        for h in hashes {
+            if let Some(node) = self.get_node(h)? {
+                nodes.insert(h.clone(), node);
+            }
+        }
+        Ok(nodes)
+    }
 }
 
 /// A node store that can also be written to. The syncer reads both sides

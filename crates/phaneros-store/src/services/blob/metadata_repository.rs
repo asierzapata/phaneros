@@ -39,4 +39,6 @@ pub trait BlobMetadataRepository {
     ) -> Result<Option<BlobMetadataInfo>, BlobMetadataRepositoryError>;
 
     async fn mark_committed(&self, hash: &Hash) -> Result<(), BlobMetadataRepositoryError>;
+
+    async fn get_missing(&self, hashes: &[Hash]) -> Result<Vec<Hash>, BlobMetadataRepositoryError>;
 }

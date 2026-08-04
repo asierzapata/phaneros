@@ -1,5 +1,6 @@
 use phaneros_sync::node::NodeWire;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 use crate::node_repository::{
     Hash, Node, NodeRepository, WritableNodeRepository, repository::NodeRepositoryError,
@@ -25,6 +26,16 @@ pub struct HttpNodeRepository {
 #[derive(Deserialize)]
 struct RootResponse {
     hash: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MissingResponse {
+    missing: HashSet<Hash>,
+}
+
+#[derive(Deserialize)]
+struct BatchResponse {
+    nodes: HashMap<Hash, NodeWire>,
 }
 
 #[derive(Serialize)]
@@ -168,6 +179,67 @@ impl NodeRepository for HttpNodeRepository {
             Err(ureq::Error::Status(404, _)) => Ok(None),
             Err(_) => Err(NodeRepositoryError::NodeRetrieveFailed(hash.clone())),
         }
+    }
+
+    fn get_missing(&self, hashes: &[Hash]) -> Result<HashSet<Hash>, NodeRepositoryError> {
+        if hashes.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let url = format!(
+            "{}/api/drives/{}/nodes/missing",
+            self.base_url, self.drive_id
+        );
+        let payload = serde_json::json!({ "hashes": hashes });
+
+        let response = self
+            .agent
+            .post(&url)
+            .set("Authorization", &self.auth)
+            .send_json(payload)
+            .map_err(|e| {
+                eprintln!("[http-node] get_missing err={:?}", e);
+                NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
+            })?;
+
+        let body: MissingResponse = response.into_json().map_err(|e| {
+            eprintln!("[http-node] get_missing parse err={:?}", e);
+            NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
+        })?;
+
+        Ok(body.missing)
+    }
+
+    fn get_nodes_batch(&self, hashes: &[Hash]) -> Result<HashMap<Hash, Node>, NodeRepositoryError> {
+        if hashes.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let url = format!("{}/api/drives/{}/nodes/batch", self.base_url, self.drive_id);
+        let payload = serde_json::json!({ "hashes": hashes });
+
+        let response = self
+            .agent
+            .post(&url)
+            .set("Authorization", &self.auth)
+            .send_json(payload)
+            .map_err(|e| {
+                eprintln!("[http-node] get_nodes_batch err={:?}", e);
+                NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
+            })?;
+
+        let body: BatchResponse = response.into_json().map_err(|e| {
+            eprintln!("[http-node] get_nodes_batch parse err={:?}", e);
+            NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
+        })?;
+
+        let mut nodes = HashMap::new();
+        for (hash, wire) in body.nodes {
+            let (_, node) = wire.reconstruct();
+            nodes.insert(hash, node);
+        }
+
+        Ok(nodes)
     }
 }
 

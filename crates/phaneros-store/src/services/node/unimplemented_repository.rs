@@ -40,6 +40,22 @@ impl NodeRepository for UnimplementedNodeRepository {
         Err(NodeRepositoryError::NotImplemented)
     }
 
+    async fn get_missing_nodes(
+        &self,
+        _drive_id: &str,
+        _hashes: &[Hash],
+    ) -> Result<Vec<Hash>, NodeRepositoryError> {
+        Err(NodeRepositoryError::NotImplemented)
+    }
+
+    async fn get_nodes_batch(
+        &self,
+        _drive_id: &str,
+        _hashes: &[Hash],
+    ) -> Result<std::collections::HashMap<Hash, Node>, NodeRepositoryError> {
+        Err(NodeRepositoryError::NotImplemented)
+    }
+
     async fn list_versions(&self, _drive_id: &str) -> Result<Vec<Version>, NodeRepositoryError> {
         Err(NodeRepositoryError::NotImplemented)
     }
