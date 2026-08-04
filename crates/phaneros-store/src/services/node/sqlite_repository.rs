@@ -135,25 +135,20 @@ impl NodeRepository for SqliteNodeRepository {
             return Ok(Vec::new());
         }
 
-        let placeholders = hashes.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT hash FROM nodes WHERE drive_id = ? AND hash IN ({})",
-            placeholders
-        );
+        let json = serde_json::to_string(hashes)?;
 
-        let mut query = sqlx::query_scalar::<_, String>(&sql).bind(drive_id);
-        for hash in hashes {
-            query = query.bind(hash.as_str());
-        }
+        let missing: Vec<String> = sqlx::query_scalar(
+            "SELECT value FROM json_each(?)
+             EXCEPT
+             SELECT hash FROM nodes WHERE drive_id = ? AND hash IN (SELECT value FROM json_each(?))",
+        )
+        .bind(&json)
+        .bind(drive_id)
+        .bind(&json)
+        .fetch_all(&self.pool)
+        .await?;
 
-        let found: Vec<String> = query.fetch_all(&self.pool).await?;
-        let found_set: std::collections::HashSet<_> = found.into_iter().collect();
-
-        Ok(hashes
-            .iter()
-            .filter(|h| !found_set.contains(h.as_str()))
-            .cloned()
-            .collect())
+        Ok(missing)
     }
 
     async fn get_nodes_batch(
@@ -165,18 +160,15 @@ impl NodeRepository for SqliteNodeRepository {
             return Ok(std::collections::HashMap::new());
         }
 
-        let placeholders = hashes.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT hash, data FROM nodes WHERE drive_id = ? AND hash IN ({})",
-            placeholders
-        );
+        let json = serde_json::to_string(hashes)?;
 
-        let mut query = sqlx::query_as::<_, (String, String)>(&sql).bind(drive_id);
-        for hash in hashes {
-            query = query.bind(hash.as_str());
-        }
-
-        let rows = query.fetch_all(&self.pool).await?;
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT hash, data FROM nodes WHERE drive_id = ? AND hash IN (SELECT value FROM json_each(?))",
+        )
+        .bind(drive_id)
+        .bind(&json)
+        .fetch_all(&self.pool)
+        .await?;
 
         let mut result = std::collections::HashMap::new();
         for (hash_str, json) in rows {

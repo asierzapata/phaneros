@@ -8,6 +8,8 @@ pub enum BlobMetadataRepositoryError {
     NotImplemented,
     #[error(transparent)]
     Database(#[from] sqlx::Error),
+    #[error(transparent)]
+    Serialization(#[from] serde_json::Error),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

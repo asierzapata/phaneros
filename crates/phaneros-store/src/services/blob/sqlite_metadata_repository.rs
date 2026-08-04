@@ -107,25 +107,19 @@ impl BlobMetadataRepository for SqliteBlobMetadataRepository {
             return Ok(Vec::new());
         }
 
-        let placeholders = hashes.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT hash FROM blob_metadata WHERE hash IN ({}) AND committed_at IS NOT NULL",
-            placeholders
-        );
+        let json = serde_json::to_string(hashes)?;
 
-        let mut query = sqlx::query_scalar::<_, String>(&sql);
-        for hash in hashes {
-            query = query.bind(hash.as_str());
-        }
+        let missing: Vec<String> = sqlx::query_scalar(
+            "SELECT value FROM json_each(?)
+             EXCEPT
+             SELECT hash FROM blob_metadata WHERE hash IN (SELECT value FROM json_each(?)) AND committed_at IS NOT NULL",
+        )
+        .bind(&json)
+        .bind(&json)
+        .fetch_all(&self.pool)
+        .await?;
 
-        let found: Vec<String> = query.fetch_all(&self.pool).await?;
-        let found_set: std::collections::HashSet<_> = found.into_iter().collect();
-
-        Ok(hashes
-            .iter()
-            .filter(|h| !found_set.contains(h.as_str()))
-            .cloned()
-            .collect())
+        Ok(missing)
     }
 }
 
