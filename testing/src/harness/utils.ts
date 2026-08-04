@@ -1,6 +1,10 @@
 import { createServer } from 'node:net';
 import { readFile, readdir } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { ManagedProcess } from './types.js';
+
+const execFileAsync = promisify(execFile);
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -133,6 +137,26 @@ export async function waitForServer(port: number, timeoutMs = 10000): Promise<vo
     timeoutMs,
     150,
     `server at port ${port} to be healthy`
+  );
+}
+
+export async function waitForDaemonReady(
+  cliBin: string,
+  socketPath: string,
+  timeoutMs = 10000
+): Promise<void> {
+  await waitForCondition(
+    async () => {
+      try {
+        await execFileAsync(cliBin, ['--socket', socketPath, 'daemon', 'ping']);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    timeoutMs,
+    150,
+    `daemon at ${socketPath} to be ready`
   );
 }
 

@@ -34,7 +34,7 @@ describe('Large Vault Benchmark', { timeout: 120_000 }, () => {
     // 2. Start store & Client A
     await harness.spawnStore();
     const pushStart = performance.now();
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
 
     const rootHash = await waitForStoreRoot(harness.storePort, 'smoke_drive', 60_000);
     const pushTime = performance.now() - pushStart;
@@ -42,7 +42,7 @@ describe('Large Vault Benchmark', { timeout: 120_000 }, () => {
 
     // 3. Start Client B and measure pull time
     const pullStart = performance.now();
-    harness.spawnClient('client_b', harness.paths.vaultB, 'smoke_drive');
+    await harness.spawnDaemon('client_b', harness.paths.vaultB, 'smoke_drive');
 
     const syncedCount = await waitForDirectoryFileCount(harness.paths.vaultB, fileCount, 60_000);
     const pullTime = performance.now() - pullStart;
@@ -76,14 +76,14 @@ describe('Large Vault Benchmark', { timeout: 120_000 }, () => {
 
     await harness.spawnStore();
     const pushStart = performance.now();
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
 
     const rootHash = await waitForStoreRoot(harness.storePort, 'smoke_drive', 60_000);
     const pushTime = performance.now() - pushStart;
     expect(rootHash).toBeTruthy();
 
     const pullStart = performance.now();
-    harness.spawnClient('client_b', harness.paths.vaultB, 'smoke_drive');
+    await harness.spawnDaemon('client_b', harness.paths.vaultB, 'smoke_drive');
 
     const syncedCount = await waitForDirectoryFileCount(harness.paths.vaultB, totalFiles, 60_000);
     const pullTime = performance.now() - pullStart;
@@ -102,10 +102,10 @@ describe('Large Vault Benchmark', { timeout: 120_000 }, () => {
     }
 
     await harness.spawnStore();
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
     await waitForStoreRoot(harness.storePort, 'smoke_drive', 60_000);
 
-    harness.spawnClient('client_b', harness.paths.vaultB, 'smoke_drive');
+    await harness.spawnDaemon('client_b', harness.paths.vaultB, 'smoke_drive');
     await waitForDirectoryFileCount(harness.paths.vaultB, fileCount, 60_000);
 
     // Now change just 1 file
@@ -136,11 +136,11 @@ describe('Large Vault Benchmark', { timeout: 120_000 }, () => {
     }
 
     await harness.spawnStore();
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
     await waitForStoreRoot(harness.storePort, 'smoke_drive', 60_000);
 
     const bootstrapStart = performance.now();
-    harness.spawnClient('client_b', harness.paths.vaultB, 'smoke_drive');
+    await harness.spawnDaemon('client_b', harness.paths.vaultB, 'smoke_drive');
 
     const syncedCount = await waitForDirectoryFileCount(harness.paths.vaultB, fileCount, 60_000);
     const bootstrapTime = performance.now() - bootstrapStart;

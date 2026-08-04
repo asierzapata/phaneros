@@ -4,6 +4,7 @@ members = [
     "crates/phaneros-core",
     "crates/phaneros-daemon",
     "crates/phaneros-cli",
+    "crates/phaneros-ipc",
     "crates/phaneros-sync",
     "crates/phaneros-store",
 ]

@@ -27,10 +27,10 @@ describe('Store Server Crash & Reconnect Recovery', () => {
     await writeFile(join(harness.paths.vaultA, 'initial.txt'), 'Before crash');
     let storeManaged = await harness.spawnStore('store_initial');
 
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
     await waitForStoreRoot(harness.storePort, 'smoke_drive');
 
-    harness.spawnClient('client_b', harness.paths.vaultB, 'smoke_drive');
+    await harness.spawnDaemon('client_b', harness.paths.vaultB, 'smoke_drive');
     await waitForFileContent(join(harness.paths.vaultB, 'initial.txt'), 'Before crash');
 
     // 2. Kill store process

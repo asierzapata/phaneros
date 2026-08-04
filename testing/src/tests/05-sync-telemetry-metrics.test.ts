@@ -2,12 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { TestHarness } from '../harness/test-context.js';
 import { waitForStoreRoot, waitForFileContent } from '../harness/utils.js';
-
-const execFileAsync = promisify(execFile);
 
 describe('Sync Telemetry & Efficiency Insights', () => {
   let harness: TestHarness;
@@ -33,13 +29,13 @@ describe('Sync Telemetry & Efficiency Insights', () => {
 
     // 2. Start server & Client A
     await harness.spawnStore();
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    const clientA = await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
 
     const initialRootHash = await waitForStoreRoot(harness.storePort, 'smoke_drive');
     expect(initialRootHash).toBeTruthy();
 
     // 3. Start Client B to pull changes
-    harness.spawnClient('client_b', harness.paths.vaultB, 'smoke_drive');
+    await harness.spawnDaemon('client_b', harness.paths.vaultB, 'smoke_drive');
 
     const textContentB = await waitForFileContent(
       join(harness.paths.vaultB, 'text.txt'),
@@ -47,18 +43,13 @@ describe('Sync Telemetry & Efficiency Insights', () => {
     );
     expect(textContentB).toBe(compressibleText);
 
-    // 4. Test phaneros stats CLI command
-    const { stdout } = await execFileAsync(
-      harness.cliBin,
-      ['stats', '--drive-id', 'smoke_drive', '--json'],
-      {
-        env: {
-          ...process.env,
-          HOME: harness.paths.sandboxDir,
-          XDG_CONFIG_HOME: harness.paths.sandboxDir,
-        },
-      }
-    );
+    // 4. Test phaneros stats CLI command against client_a's daemon
+    const { stdout } = await harness.cli(clientA.socketPath, [
+      'stats',
+      '--drive-id',
+      'smoke_drive',
+      '--json',
+    ]);
     expect(stdout).toBeTruthy();
 
     const stats = JSON.parse(stdout);

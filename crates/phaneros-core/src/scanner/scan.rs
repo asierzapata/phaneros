@@ -2,7 +2,7 @@ use rayon::prelude::*;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::{fs, time::SystemTime};
 use thiserror::Error;
 
@@ -170,7 +170,7 @@ pub struct Scanner {
     snapshot_buffer_size: usize,
     current_snapshot: Option<ScanSnapshot>,
     scan_snapshots: VecDeque<ScanSnapshot>,
-    node_repository: Arc<RwLock<InMemoryNodeRepository>>,
+    node_repository: Arc<InMemoryNodeRepository>,
     ignore_filter: IgnoreFilter,
 }
 
@@ -185,12 +185,12 @@ impl Scanner {
             publisher: Publisher::new(),
             file_chunker: FileChunker::new(
                 FileChunkerConfig::default(),
-                Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+                Arc::new(InMemoryBlobRepository::new()),
             ),
             snapshot_buffer_size: 10,
             current_snapshot: None,
             scan_snapshots: VecDeque::new(),
-            node_repository: Arc::new(RwLock::new(InMemoryNodeRepository::new())),
+            node_repository: Arc::new(InMemoryNodeRepository::new()),
             ignore_filter,
         }
     }
@@ -199,11 +199,11 @@ impl Scanner {
         &mut self.publisher
     }
 
-    pub fn get_store(&self) -> Arc<RwLock<InMemoryNodeRepository>> {
+    pub fn get_store(&self) -> Arc<InMemoryNodeRepository> {
         Arc::clone(&self.node_repository)
     }
 
-    pub fn get_blob_repository(&self) -> Arc<RwLock<InMemoryBlobRepository>> {
+    pub fn get_blob_repository(&self) -> Arc<InMemoryBlobRepository> {
         Arc::clone(&self.file_chunker.blob_repository)
     }
 
@@ -292,7 +292,7 @@ impl Scanner {
                 // Commit the whole scan in one write lock so readers never see
                 // a root whose nodes aren't all present yet.
                 {
-                    let store = self.node_repository.read().unwrap();
+                    let store = &self.node_repository;
                     for (hash, node) in nodes {
                         store
                             .insert_internal(hash, node)
@@ -487,8 +487,6 @@ impl Scanner {
             })
             .filter(|hash| {
                 self.node_repository
-                    .read()
-                    .unwrap()
                     .get_node_internal(hash)
                     .is_ok_and(|node| node.is_some())
             });

@@ -1,165 +1,307 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use phaneros_core::config::expand_tilde;
-use phaneros_core::telemetry::MetricsDatabase;
-use phaneros_core::{EngineConfig, PhanerosConfig, SyncEngine};
+use phaneros_ipc::methods::{AddDriveParams, DriveIdParams, DriveStatusResult, DriveSummary, StatsParams};
+use phaneros_ipc::{IpcClient, IpcError, Notification, PingResult, Request};
+use serde_json::Value;
 
-/// A command-line utility for synchronizing files and directories across
-/// multiple devices.
+/// A command-line client for the Phaneros sync daemon (`phanerosd`).
+///
+/// Talks to the daemon over its JSON-RPC control-plane socket; it does not
+/// run any sync engine itself. Start `phanerosd` first.
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
+    /// Path to the daemon's control-plane unix socket. Defaults to the
+    /// daemon's default socket path; must match `daemon.ipc_socket` if the
+    /// daemon was configured with a custom one.
+    #[arg(long, global = true, value_name = "PATH")]
+    socket: Option<PathBuf>,
+
     #[command(subcommand)]
-    command: Option<Commands>,
-
-    /// Path to custom configuration TOML file
-    #[arg(short, long, value_name = "FILE")]
-    config: Option<PathBuf>,
-
-    /// Directory to watch and sync.
-    #[arg(value_name = "PATH")]
-    path: Option<PathBuf>,
-
-    /// Base URL of the remote phaneros-store
-    #[arg(long)]
-    store_url: Option<String>,
-
-    /// Drive identifier on the remote store
-    #[arg(long, default_value = "default")]
-    drive_id: String,
-
-    /// Bearer token for authenticating with the remote store
-    #[arg(long)]
-    token: Option<String>,
-
-    /// Debug: dump the local store state to DIR/local_store_dump.txt after every sync
-    #[arg(
-        long,
-        value_name = "DIR",
-        num_args = 0..=1,
-        default_missing_value = "target"
-    )]
-    dump_store: Option<PathBuf>,
+    command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Display sync efficiency metrics, transfer rates, and historical insights
-    Stats {
-        /// Filter stats by drive ID
+    /// List every drive known to the daemon.
+    List,
+    /// Show a single drive's status and current sync progress.
+    Status {
+        #[arg(long)]
+        drive_id: String,
+    },
+    /// Start a configured-but-stopped drive.
+    Start { drive_id: String },
+    /// Gracefully stop a running drive.
+    Stop { drive_id: String },
+    /// Add a new drive to the daemon's configuration.
+    Add {
+        drive_id: String,
+        /// Local directory to sync.
+        #[arg(long)]
+        path: PathBuf,
+        /// Base URL of the remote phaneros-store, if different from the daemon default.
+        #[arg(long)]
+        store_url: Option<String>,
+        /// Bearer token for authenticating with the remote store.
+        #[arg(long)]
+        token: Option<String>,
+        /// Add the drive without starting it.
+        #[arg(long)]
+        disabled: bool,
+    },
+    /// Remove a drive from the daemon's configuration.
+    Remove { drive_id: String },
+    /// Force an immediate sync pass for a drive.
+    Sync { drive_id: String },
+    /// Stream live sync progress and status changes.
+    Watch {
+        /// Only show events for this drive.
         #[arg(long)]
         drive_id: Option<String>,
-
-        /// Output as JSON
+    },
+    /// Display sync efficiency metrics and historical insights.
+    Stats {
+        #[arg(long)]
+        drive_id: Option<String>,
+        /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
+    /// Low-level daemon diagnostics.
+    Daemon {
+        #[command(subcommand)]
+        command: DaemonCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum DaemonCommands {
+    /// Check that the daemon is reachable and responsive.
+    Ping,
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
-    if let Some(Commands::Stats { drive_id, json }) = cli.command {
-        print_stats(drive_id.as_deref(), json).await;
-        return;
-    }
+    let socket_path = cli.socket.clone().or_else(default_socket_path).unwrap_or_else(|| {
+        eprintln!(
+            "Could not determine a default daemon socket path; pass --socket explicitly."
+        );
+        std::process::exit(1);
+    });
 
-    let (config, config_path) = match PhanerosConfig::load_or_default(cli.config.as_deref()) {
-        Ok(res) => res,
-        Err(err) => {
-            eprintln!("Configuration error: {err}");
-            std::process::exit(1);
+    match cli.command {
+        Commands::List => {
+            let value = call(&socket_path, Request::DrivesList).await;
+            let drives: Vec<DriveSummary> = expect_value(value);
+            print_drive_table(&drives);
         }
-    };
-
-    let configured_drive = config.drives.get(&cli.drive_id);
-
-    let sync_path = match cli.path {
-        Some(p) => expand_tilde(&p),
-        None => match configured_drive {
-            Some(drive) => drive.expanded_path(),
-            None => {
-                eprintln!(
-                    "Error: No local PATH specified and drive '{}' not found in configuration file ({})",
-                    cli.drive_id,
-                    config_path.display()
+        Commands::Status { drive_id } => {
+            let value = call(&socket_path, Request::DrivesStatus(DriveIdParams { drive_id })).await;
+            let status: DriveStatusResult = expect_value(value);
+            print_drive_status(&status);
+        }
+        Commands::Start { drive_id } => {
+            call(&socket_path, Request::DrivesStart(DriveIdParams { drive_id: drive_id.clone() })).await;
+            println!("Started drive '{}'.", drive_id);
+        }
+        Commands::Stop { drive_id } => {
+            call(&socket_path, Request::DrivesStop(DriveIdParams { drive_id: drive_id.clone() })).await;
+            println!("Stopped drive '{}'.", drive_id);
+        }
+        Commands::Add {
+            drive_id,
+            path,
+            store_url,
+            token,
+            disabled,
+        } => {
+            let params = AddDriveParams {
+                drive_id: drive_id.clone(),
+                path: path.to_string_lossy().to_string(),
+                token,
+                store_url,
+                enabled: !disabled,
+            };
+            call(&socket_path, Request::DrivesAdd(params)).await;
+            println!("Added drive '{}'.", drive_id);
+        }
+        Commands::Remove { drive_id } => {
+            call(&socket_path, Request::DrivesRemove(DriveIdParams { drive_id: drive_id.clone() })).await;
+            println!("Removed drive '{}'.", drive_id);
+        }
+        Commands::Sync { drive_id } => {
+            call(
+                &socket_path,
+                Request::DrivesTriggerSync(DriveIdParams { drive_id: drive_id.clone() }),
+            )
+            .await;
+            println!("Triggered a sync for drive '{}'.", drive_id);
+        }
+        Commands::Watch { drive_id } => watch(&socket_path, drive_id).await,
+        Commands::Stats { drive_id, json } => {
+            let value = call(&socket_path, Request::StatsAggregate(StatsParams { drive_id: drive_id.clone() })).await;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&value).unwrap());
+            } else {
+                print_stats(drive_id.as_deref(), &value);
+            }
+        }
+        Commands::Daemon { command } => match command {
+            DaemonCommands::Ping => {
+                let value = call(&socket_path, Request::DaemonPing).await;
+                let ping: PingResult = expect_value(value);
+                println!(
+                    "phanerosd {} (pid {}), up {}s",
+                    ping.version, ping.pid, ping.uptime_seconds
                 );
-                std::process::exit(1);
             }
         },
-    };
-
-    let store_url = match cli.store_url {
-        Some(url) => url,
-        None => match configured_drive {
-            Some(drive) => drive.get_effective_store_url(&config.daemon.store_url).to_string(),
-            None => config.daemon.store_url.clone(),
-        },
-    };
-
-    let token = match cli.token {
-        Some(t) => t,
-        None => match configured_drive {
-            Some(drive) => drive.token.clone(),
-            None => String::new(),
-        },
-    };
-
-    println!("Using config file: {}", config_path.display());
-    println!("Sync target path: {}", sync_path.display());
-    println!("Remote store URL: {}", store_url);
-
-    let engine_config = EngineConfig::new(
-        sync_path,
-        store_url,
-        cli.drive_id,
-        token,
-        cli.dump_store,
-    )
-    .with_telemetry(config.daemon.enable_telemetry);
-
-    let engine = SyncEngine::new(engine_config);
-    if let Err(err) = engine.run().await {
-        eprintln!("Phaneros engine error: {err}");
-        std::process::exit(1);
     }
 }
 
-async fn print_stats(drive_id: Option<&str>, json: bool) {
-    let db = match MetricsDatabase::connect_default().await {
-        Ok(db) => db,
+fn default_socket_path() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|dir| dir.join("phaneros").join("phaneros.sock"))
+}
+
+async fn connect(socket_path: &Path) -> IpcClient {
+    match IpcClient::connect(socket_path).await {
+        Ok(client) => client,
         Err(err) => {
-            eprintln!("Failed to open metrics database: {err}");
+            eprintln!(
+                "Could not connect to the phaneros daemon at {} ({}).",
+                socket_path.display(),
+                err
+            );
+            eprintln!("Is `phanerosd` running? Start it, or pass --socket to point at a different instance.");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Connects fresh, makes one request, and exits the process with a clear
+/// error message on any transport or daemon-side failure.
+async fn call(socket_path: &Path, request: Request) -> Value {
+    let mut client = connect(socket_path).await;
+    match client.call(request).await {
+        Ok(value) => value,
+        Err(IpcError::Remote(err)) => {
+            eprintln!("Error: {}", err.message);
+            std::process::exit(1);
+        }
+        Err(err) => {
+            eprintln!("Error talking to phanerosd: {}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn expect_value<T: serde::de::DeserializeOwned>(value: Value) -> T {
+    match serde_json::from_value(value) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            eprintln!("Received an unexpected response from phanerosd: {}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn watch(socket_path: &Path, drive_id_filter: Option<String>) {
+    let client = connect(socket_path).await;
+    let mut client = match client.subscribe().await {
+        Ok(client) => client,
+        Err(err) => {
+            eprintln!("Failed to subscribe to daemon events: {}", err);
             std::process::exit(1);
         }
     };
 
-        let stats = match db.get_aggregate_stats(drive_id).await {
-            Ok(s) => s,
-            Err(err) => {
-                eprintln!("Failed to query aggregate stats: {err}");
-                std::process::exit(1);
+    println!("Watching for sync events... (Ctrl-C to stop)");
+    loop {
+        match client.next_notification().await {
+            Ok(Some(Notification::EventProgress { drive_id, event })) => {
+                if drive_id_filter.as_deref().is_some_and(|f| f != drive_id) {
+                    continue;
+                }
+                println!(
+                    "[{}] {:?} - {}/{} blobs, {} B sent",
+                    drive_id, event.phase, event.blobs_completed, event.blobs_total, event.bytes_sent
+                );
             }
-        };
-
-        if json {
-            println!("{}", serde_json::to_string_pretty(&stats).unwrap());
-            return;
+            Ok(Some(Notification::EventDriveStatusChanged { drive_id, status })) => {
+                if drive_id_filter.as_deref().is_some_and(|f| f != drive_id) {
+                    continue;
+                }
+                println!("[{}] status changed: {}", drive_id, status);
+            }
+            Ok(None) => {
+                println!("Connection closed by daemon.");
+                break;
+            }
+            Err(err) => {
+                eprintln!("Error reading events: {}", err);
+                break;
+            }
         }
+    }
+}
 
-        println!("=== Phaneros Sync Telemetry Insights ===");
-        if let Some(did) = drive_id {
-            println!("Filter Drive ID:        {}", did);
-        }
-        println!("Total Sync Sessions:     {}", stats.total_syncs);
-        println!("Logical Data Processed:  {}", format_bytes(stats.total_raw_bytes));
-        println!("Wire Bytes Transferred:  {}", format_bytes(stats.total_wire_bytes));
-        println!("Deduplicated Bytes Saved:{}", format_bytes(stats.total_dedup_bytes));
-        println!("Compression Efficiency:  {:.2}% savings", stats.overall_compression_ratio_pct);
-        println!("Average Upload Speed:    {}", format_speed(stats.avg_upload_rate_bps));
-        println!("=========================================");
+fn print_drive_table(drives: &[DriveSummary]) {
+    if drives.is_empty() {
+        println!("No drives configured.");
+        return;
+    }
+    println!("{:<20} {:<10} {:<12} {:<40}", "DRIVE", "ENABLED", "STATUS", "PATH");
+    for drive in drives {
+        println!(
+            "{:<20} {:<10} {:<12} {:<40}",
+            drive.drive_id,
+            drive.enabled,
+            drive.status.to_string(),
+            drive.path
+        );
+    }
+}
+
+fn print_drive_status(status: &DriveStatusResult) {
+    println!("Drive:      {}", status.summary.drive_id);
+    println!("Path:       {}", status.summary.path);
+    println!("Store URL:  {}", status.summary.store_url);
+    println!("Enabled:    {}", status.summary.enabled);
+    println!("Status:     {}", status.summary.status);
+    if let Some(root) = &status.summary.last_synced_root {
+        println!("Last root:  {}", root);
+    }
+    if let Some(progress) = &status.progress {
+        println!(
+            "Progress:   {:?} ({}/{} blobs, {} B sent)",
+            progress.phase, progress.blobs_completed, progress.blobs_total, progress.bytes_sent
+        );
+    }
+}
+
+fn print_stats(drive_id: Option<&str>, value: &Value) {
+    let total_syncs = value["total_syncs"].as_u64().unwrap_or(0);
+    let total_raw_bytes = value["total_raw_bytes"].as_u64().unwrap_or(0);
+    let total_wire_bytes = value["total_wire_bytes"].as_u64().unwrap_or(0);
+    let total_dedup_bytes = value["total_dedup_bytes"].as_u64().unwrap_or(0);
+    let compression_pct = value["overall_compression_ratio_pct"].as_f64().unwrap_or(0.0);
+    let avg_speed = value["avg_upload_rate_bps"].as_u64().unwrap_or(0);
+
+    println!("=== Phaneros Sync Telemetry Insights ===");
+    if let Some(did) = drive_id {
+        println!("Filter Drive ID:        {}", did);
+    }
+    println!("Total Sync Sessions:     {}", total_syncs);
+    println!("Logical Data Processed:  {}", format_bytes(total_raw_bytes));
+    println!("Wire Bytes Transferred:  {}", format_bytes(total_wire_bytes));
+    println!("Deduplicated Bytes Saved:{}", format_bytes(total_dedup_bytes));
+    println!("Compression Efficiency:  {:.2}% savings", compression_pct);
+    println!("Average Upload Speed:    {}", format_speed(avg_speed));
+    println!("=========================================");
 }
 
 fn format_bytes(bytes: u64) -> String {

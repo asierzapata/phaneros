@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    path::Path,
-    sync::{Arc, RwLock},
-};
+use std::{fs, path::Path, sync::Arc};
 
 use fastcdc::v2020::FastCDC;
 use thiserror::Error;
@@ -44,13 +40,13 @@ pub enum FileChunkerError {
 #[derive(Debug)]
 pub struct FileChunker {
     config: FileChunkerConfig,
-    pub blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
+    pub blob_repository: Arc<InMemoryBlobRepository>,
 }
 
 impl FileChunker {
     pub fn new(
         config: FileChunkerConfig,
-        blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
+        blob_repository: Arc<InMemoryBlobRepository>,
     ) -> Self {
         FileChunker {
             config,
@@ -61,8 +57,6 @@ impl FileChunker {
     pub fn chunk_file(&self, path: &Path) -> Result<Vec<BlobRef>, FileChunkerError> {
         read_chunks(path, self.config, |blob_ref, bytes| {
             self.blob_repository
-                .read()
-                .unwrap()
                 .insert_internal(
                     blob_ref.hash.clone(),
                     Blob {

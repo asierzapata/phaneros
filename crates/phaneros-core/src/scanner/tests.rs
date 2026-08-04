@@ -37,7 +37,6 @@ struct FileView {
 fn scan_view(scanner: &mut Scanner) -> Result<TreeView, ScannerError> {
     let root_hash = scanner.scan()?;
     let store = scanner.get_store();
-    let store = store.read().unwrap();
     let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
     let (folders, files) = rt.block_on(expand_folder(&store, &root_hash));
     Ok(TreeView {
@@ -360,7 +359,7 @@ mod hash_determinism {
 
 mod file_chunking {
     use crate::blob_repository::{BlobRef, InMemoryBlobRepository};
-    use std::sync::{Arc, RwLock};
+    use std::sync::Arc;
 
     use super::*;
 
@@ -380,7 +379,7 @@ mod file_chunking {
 
         let chunker = FileChunker::new(
             SMALL_CONFIG,
-            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+            Arc::new(InMemoryBlobRepository::new()),
         );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
@@ -404,7 +403,7 @@ mod file_chunking {
 
         let chunker = FileChunker::new(
             SMALL_CONFIG,
-            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+            Arc::new(InMemoryBlobRepository::new()),
         );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
@@ -419,7 +418,7 @@ mod file_chunking {
 
         let chunker = FileChunker::new(
             SMALL_CONFIG,
-            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+            Arc::new(InMemoryBlobRepository::new()),
         );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
@@ -438,7 +437,7 @@ mod file_chunking {
 
         let chunker = FileChunker::new(
             SMALL_CONFIG,
-            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+            Arc::new(InMemoryBlobRepository::new()),
         );
         let blobs_a = chunker.chunk_file(&file_a).unwrap();
         let blobs_b = chunker.chunk_file(&file_b).unwrap();
@@ -494,11 +493,11 @@ mod file_chunking {
         edited_data.splice(10000..10000, insertion);
         fs::write(&path2, &edited_data).unwrap();
 
-        let repo1 = Arc::new(RwLock::new(InMemoryBlobRepository::new()));
+        let repo1 = Arc::new(InMemoryBlobRepository::new());
         let chunker1 = FileChunker::new(FileChunkerConfig::default(), repo1);
         let refs1 = chunker1.chunk_file(&path1).unwrap();
 
-        let repo2 = Arc::new(RwLock::new(InMemoryBlobRepository::new()));
+        let repo2 = Arc::new(InMemoryBlobRepository::new());
         let chunker2 = FileChunker::new(FileChunkerConfig::default(), repo2);
         let refs2 = chunker2.chunk_file(&path2).unwrap();
 
@@ -534,7 +533,7 @@ mod file_chunking {
 
         let chunker = FileChunker::new(
             FileChunkerConfig::default(),
-            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+            Arc::new(InMemoryBlobRepository::new()),
         ); // content fits in one chunk
         let blobs = chunker.chunk_file(&file_path).unwrap();
 

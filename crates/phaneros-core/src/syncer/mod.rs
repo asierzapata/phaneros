@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use futures::StreamExt;
+use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 use thiserror::Error;
 
@@ -17,6 +19,7 @@ use crate::{
         diff::compute_unidirectional_diff, materialize::materialize, merge::merge,
         sync_state::DriveSession,
     },
+    telemetry::DriveStatus,
     utils::filesystem_write::trash_batch_path,
     watcher::RescanHandle,
 };
@@ -105,14 +108,8 @@ pub fn plan_sync(
     }
 }
 
-enum Status {
-    Idle,
-    Reconciling,
-    Materializing,
-}
-
 struct SyncerStatus {
-    value: Status,
+    value: DriveStatus,
     /// We coalesce multiple watcher events into a single reconcile, but we still want to know if the local store has changed since the last reconcile.
     is_dirty: bool,
 }
@@ -120,14 +117,24 @@ struct SyncerStatus {
 pub struct Syncer {
     watcher_rx: tokio::sync::mpsc::Receiver<Hash>,
     initial_root_hash: Hash,
-    local_node_repository: Arc<RwLock<InMemoryNodeRepository>>,
-    remote_node_repository: Arc<RwLock<HttpNodeRepository>>,
-    local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
-    remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
+    local_node_repository: Arc<InMemoryNodeRepository>,
+    remote_node_repository: Arc<HttpNodeRepository>,
+    local_blob_repository: Arc<InMemoryBlobRepository>,
+    remote_blob_repository: Arc<HttpBlobRepository>,
     drive_session: DriveSession,
     rescan: RescanHandle,
     vault_path: PathBuf,
     status: SyncerStatus,
+    /// Published alongside `status.value` so callers outside this struct
+    /// (an `EngineHandle`, and through it the daemon's IPC layer) can
+    /// observe drive lifecycle status without touching `Syncer` internals.
+    status_tx: watch::Sender<DriveStatus>,
+    /// Holds the `ProgressTracker` of the in-flight (or most recently
+    /// finished) reconcile, so a caller can poll current progress without
+    /// coupling to `Syncer`'s internals.
+    progress: Arc<RwLock<crate::telemetry::ProgressTracker>>,
+    /// Cooperative shutdown signal, checked in the main event loop.
+    cancel: CancellationToken,
     /// When set, the local store state is dumped to a text file in this
     /// directory after every reconcile (debug tooling, off by default).
     store_dump_dir: Option<std::path::PathBuf>,
@@ -139,14 +146,18 @@ impl Syncer {
     pub fn new(
         watcher_rx: tokio::sync::mpsc::Receiver<Hash>,
         initial_root_hash: Hash,
-        local_node_repository: Arc<RwLock<InMemoryNodeRepository>>,
-        remote_node_repository: Arc<RwLock<HttpNodeRepository>>,
-        local_blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
-        remote_blob_repository: Arc<RwLock<HttpBlobRepository>>,
+        local_node_repository: Arc<InMemoryNodeRepository>,
+        remote_node_repository: Arc<HttpNodeRepository>,
+        local_blob_repository: Arc<InMemoryBlobRepository>,
+        remote_blob_repository: Arc<HttpBlobRepository>,
         drive_session: DriveSession,
         rescan: RescanHandle,
     ) -> Self {
         let vault_path = PathBuf::from(&drive_session.state.local_path);
+        let (status_tx, _status_rx) = watch::channel(DriveStatus::Idle);
+        let progress = Arc::new(RwLock::new(crate::telemetry::ProgressTracker::new(
+            &drive_session.state.drive_id,
+        )));
 
         Syncer {
             watcher_rx,
@@ -159,9 +170,12 @@ impl Syncer {
             rescan,
             vault_path,
             status: SyncerStatus {
-                value: Status::Idle,
+                value: DriveStatus::Idle,
                 is_dirty: false,
             },
+            status_tx,
+            progress,
+            cancel: CancellationToken::new(),
             store_dump_dir: None,
             enable_telemetry: false,
             max_concurrent_uploads: 10,
@@ -178,6 +192,33 @@ impl Syncer {
         self
     }
 
+    /// Overrides the status channel, so a caller (e.g. `EngineHandle`) can
+    /// hold on to the `Receiver` half before this `Syncer` moves into its
+    /// background task.
+    pub fn with_status_channel(mut self, status_tx: watch::Sender<DriveStatus>) -> Self {
+        let _ = status_tx.send(self.status.value.clone());
+        self.status_tx = status_tx;
+        self
+    }
+
+    /// Overrides the cancellation token, so a caller can request cooperative
+    /// shutdown of the run loop from outside.
+    pub fn with_cancellation(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
+    /// Overrides the shared progress handle, so a caller can keep reading
+    /// current sync progress via the same `Arc` after this `Syncer` moves
+    /// into its background task.
+    pub fn with_progress_handle(
+        mut self,
+        progress: Arc<RwLock<crate::telemetry::ProgressTracker>>,
+    ) -> Self {
+        self.progress = progress;
+        self
+    }
+
     /// Enables dumping the local store state to `dir/local_store_dump.txt`
     /// after every reconcile.
     pub fn with_store_dump(mut self, dir: std::path::PathBuf) -> Self {
@@ -186,41 +227,57 @@ impl Syncer {
     }
 
     pub async fn run(&mut self) {
-        println!(
-            "Syncer started with initial root hash: {}",
-            self.initial_root_hash
-        );
+        tracing::info!(root_hash = %self.initial_root_hash, "syncer started");
         self.sync_once(self.initial_root_hash.clone()).await;
-        while let Some(updated_root_hash) = self.watcher_rx.recv().await {
-            println!("Syncer received updated root hash: {}", updated_root_hash);
-            self.sync_once(updated_root_hash).await;
+
+        loop {
+            tokio::select! {
+                _ = self.cancel.cancelled() => {
+                    tracing::info!("syncer received cancellation, stopping");
+                    break;
+                }
+                maybe_hash = self.watcher_rx.recv() => {
+                    match maybe_hash {
+                        Some(updated_root_hash) => {
+                            tracing::info!(root_hash = %updated_root_hash, "syncer received updated root hash");
+                            self.sync_once(updated_root_hash).await;
+                        }
+                        None => break,
+                    }
+                }
+            }
         }
+
+        self.set_status(DriveStatus::Stopped);
+    }
+
+    fn set_status(&mut self, status: DriveStatus) {
+        self.status.value = status.clone();
+        let _ = self.status_tx.send(status);
     }
 
     async fn sync_once(&mut self, local_root_hash: Hash) {
-        if !matches!(self.status.value, Status::Idle) {
-            println!("Syncer is already busy; skipping this event.");
+        if !matches!(self.status.value, DriveStatus::Idle) {
+            tracing::debug!("syncer is already busy; skipping this event");
             self.status.is_dirty = true;
             return;
         }
 
         let tracker = crate::telemetry::ProgressTracker::new(&self.drive_session.state.drive_id);
-        if let Ok(mut repo) = self.remote_blob_repository.write() {
-            repo.set_tracker(tracker.clone());
+        self.remote_blob_repository.set_tracker(tracker.clone());
+        if let Ok(mut current) = self.progress.write() {
+            *current = tracker.clone();
         }
 
         tracker.set_phase(crate::telemetry::SyncPhase::Diffing);
-        self.status.value = Status::Reconciling;
+        self.set_status(DriveStatus::Reconciling);
         self.status.is_dirty = false;
 
         let base_root = self.current_base_root();
         let remote_root = self.get_fresh_remote_hash().await;
         let plan = plan_sync(base_root.as_ref(), &local_root_hash, remote_root.as_ref());
 
-        println!(
-            "Syncer plan: {:?} (B={:?}, L={}, R={:?})",
-            plan, base_root, local_root_hash, remote_root
-        );
+        tracing::info!(?plan, ?base_root, local_root = %local_root_hash, ?remote_root, "syncer plan computed");
 
         if plan == SyncPlan::LocalPush {
             tracker.set_phase(crate::telemetry::SyncPhase::UploadingPayloads);
@@ -253,23 +310,21 @@ impl Syncer {
             }
         }
 
-        println!(
-            "[telemetry] Sync completed in {:.2?} (Compression: {:.1}%, Wire: {} B, Dedup Saved: {} B, Avg: {} B/s)",
-            summary.phase_timings.total_duration,
-            summary.compression.compression_ratio(),
-            summary.transfer.wire_bytes_sent,
-            summary.transfer.deduplicated_bytes_saved,
-            summary.avg_upload_rate_bps,
+        tracing::info!(
+            duration = ?summary.phase_timings.total_duration,
+            compression_pct = summary.compression.compression_ratio(),
+            wire_bytes = summary.transfer.wire_bytes_sent,
+            dedup_bytes_saved = summary.transfer.deduplicated_bytes_saved,
+            avg_upload_rate_bps = summary.avg_upload_rate_bps,
+            "sync completed"
         );
 
-        self.status.value = Status::Idle;
+        self.set_status(DriveStatus::Idle);
         self.status.is_dirty = false;
 
         if let Some(next_root) = next_root {
-            println!("Syncer found the vault changed underneath it; syncing again.");
-            // We use Box::pin if we needed recursion but here we can just loop or call it again. Wait, async recursion needs Box::pin.
-            // Let's just call it recursively since it's tail recursion (mostly). Actually Rust async fns can't be recursive directly. 
-            // So we'll use Box::pin.
+            tracing::info!("vault changed underneath the syncer; syncing again");
+            // Async fns can't recurse directly, so this needs Box::pin.
             Box::pin(self.sync_once(next_root)).await;
         }
     }
@@ -284,7 +339,7 @@ impl Syncer {
         let mut next_root = None;
 
         if converged_root != *local_root_hash {
-            self.status.value = Status::Materializing;
+            self.set_status(DriveStatus::Materializing);
 
             if !self.materialize_converged_root(local_root_hash, &converged_root).await {
                 return None;
@@ -299,7 +354,7 @@ impl Syncer {
                 Ok(fresh_root) if fresh_root != converged_root => next_root = Some(fresh_root),
                 Ok(_) => {}
                 Err(err) => {
-                    eprintln!("Syncer failed to rescan after materializing: {}", err);
+                    tracing::warn!("Syncer failed to rescan after materializing: {}", err);
                 }
             }
         }
@@ -310,8 +365,8 @@ impl Syncer {
     }
 
     async fn materialize_converged_root(&self, from_root: &Hash, to_root: &Hash) -> bool {
-        let local_node_repository = self.local_node_repository.read().unwrap();
-        let local_blob_repository = self.local_blob_repository.read().unwrap();
+        let local_node_repository = self.local_node_repository.clone();
+        let local_blob_repository = self.local_blob_repository.clone();
         let trash_batch = trash_batch_path(&self.vault_path);
 
         match materialize(
@@ -323,18 +378,18 @@ impl Syncer {
             to_root,
         ).await {
             Ok(stats) if stats.touched_nothing() => {
-                println!("Syncer found the vault already matching {}.", to_root);
+                tracing::info!("Syncer found the vault already matching {}.", to_root);
                 true
             }
             Ok(stats) => {
-                println!(
+                tracing::info!(
                     "Syncer materialized {} into the vault ({} files written, {} folders created, {} entries trashed).",
                     to_root, stats.files_written, stats.folders_created, stats.entries_trashed,
                 );
                 true
             }
             Err(err) => {
-                eprintln!(
+                tracing::warn!(
                     "Syncer failed to materialize {} into the vault: {}",
                     to_root, err
                 );
@@ -348,8 +403,7 @@ impl Syncer {
     }
 
     async fn get_fresh_remote_hash(&self) -> Option<Hash> {
-        let remote_node_repository = self.remote_node_repository.write().unwrap();
-        remote_node_repository
+        self.remote_node_repository
             .refresh_root().await
             .ok()
             .flatten()
@@ -370,28 +424,28 @@ impl Syncer {
         let mut success = false;
 
         {
-            let local_node_repository = self.local_node_repository.read().unwrap();
-            let mut remote_node_repository = self.remote_node_repository.write().unwrap();
-            let local_blob_repository = self.local_blob_repository.read().unwrap();
-            let mut remote_blob_repository = self.remote_blob_repository.write().unwrap();
+            let local_node_repository = self.local_node_repository.clone();
+            let remote_node_repository = self.remote_node_repository.clone();
+            let local_blob_repository = self.local_blob_repository.clone();
+            let remote_blob_repository = self.remote_blob_repository.clone();
 
             let nodes_before = remote_node_repository.len();
             let blobs_before = remote_blob_repository.len();
             let result = local_push(
                 &*local_node_repository,
-                &mut *remote_node_repository,
+                &*remote_node_repository,
                 &*local_blob_repository,
-                &mut *remote_blob_repository,
+                &*remote_blob_repository,
                 &root_hash,
             ).await;
 
             match result {
                 Ok(0) => {
-                    println!("Syncer found no nodes to sync with remote node store.");
+                    tracing::info!("Syncer found no nodes to sync with remote node store.");
                     success = true;
                 }
                 Ok(transferred) => {
-                    println!(
+                    tracing::info!(
                         "Syncer transferred {} nodes and {} blobs to remote (nodes {} -> {}, blobs {} -> {}).",
                         transferred,
                         remote_blob_repository.len() - blobs_before,
@@ -403,7 +457,7 @@ impl Syncer {
                     success = true;
                 }
                 Err(SyncError::NodeRepository(NodeRepositoryError::RootConflict { actual })) => {
-                    eprintln!(
+                    tracing::warn!(
                         "Syncer hit root conflict; reconcile aborted. Remote root: {:?}",
                         actual
                     );
@@ -411,7 +465,7 @@ impl Syncer {
                 // On other errors the remote root was never flipped, so the remote tree is still the old,
                 // consistent one; a future trigger can retry from scratch.
                 Err(err) => {
-                    eprintln!("Syncer failed to reconcile: {}", err);
+                    tracing::warn!("Syncer failed to reconcile: {}", err);
                     return None;
                 }
             }
@@ -422,7 +476,7 @@ impl Syncer {
                     &*local_blob_repository,
                     &dump_dir.join("local_store_dump.txt"),
                 ).await {
-                    eprintln!("Syncer failed to dump local store state: {}", err);
+                    tracing::warn!("Syncer failed to dump local store state: {}", err);
                 }
             }
         }
@@ -432,35 +486,35 @@ impl Syncer {
 
     async fn reconcile_with_remote_bootstrap_pull(&mut self) -> Option<Hash> {
         let Some(remote_root_hash) = self.get_fresh_remote_hash().await else {
-            eprintln!("Syncer cannot bootstrap pull because remote root is unavailable.");
+            tracing::warn!("Syncer cannot bootstrap pull because remote root is unavailable.");
             return None;
         };
 
         let mut success = false;
 
         {
-            let mut local_node_repository = self.local_node_repository.write().unwrap();
-            let mut remote_node_repository = self.remote_node_repository.write().unwrap();
-            let mut local_blob_repository = self.local_blob_repository.write().unwrap();
-            let mut remote_blob_repository = self.remote_blob_repository.write().unwrap();
+            let local_node_repository = self.local_node_repository.clone();
+            let remote_node_repository = self.remote_node_repository.clone();
+            let local_blob_repository = self.local_blob_repository.clone();
+            let remote_blob_repository = self.remote_blob_repository.clone();
 
             let nodes_before = local_node_repository.len();
             let blobs_before = local_blob_repository.len();
             let result = bootstrap_pull(
-                &mut *local_node_repository,
-                &mut *remote_node_repository,
-                &mut *local_blob_repository,
-                &mut *remote_blob_repository,
+                &*local_node_repository,
+                &*remote_node_repository,
+                &*local_blob_repository,
+                &*remote_blob_repository,
                 &remote_root_hash,
             ).await;
 
             match result {
                 Ok(0) => {
-                    println!("Syncer found no nodes to bootstrap pull from remote node store.");
+                    tracing::info!("Syncer found no nodes to bootstrap pull from remote node store.");
                     success = true;
                 }
                 Ok(transferred) => {
-                    println!(
+                    tracing::info!(
                         "Syncer bootstrap-pulled {} nodes and {} blobs from remote (nodes {} -> {}, blobs {} -> {}).",
                         transferred,
                         local_blob_repository.len() - blobs_before,
@@ -472,13 +526,13 @@ impl Syncer {
                     success = true;
                 }
                 Err(SyncError::NodeRepository(NodeRepositoryError::RootConflict { actual })) => {
-                    eprintln!(
+                    tracing::warn!(
                         "Syncer hit root conflict during bootstrap pull; reconcile aborted. Local root: {:?}",
                         actual
                     );
                 }
                 Err(err) => {
-                    eprintln!("Syncer failed to bootstrap pull: {}", err);
+                    tracing::warn!("Syncer failed to bootstrap pull: {}", err);
                     return None;
                 }
             }
@@ -489,7 +543,7 @@ impl Syncer {
                     &*local_blob_repository,
                     &dump_dir.join("local_store_dump.txt"),
                 ).await {
-                    eprintln!("Syncer failed to dump local store state: {}", err);
+                    tracing::warn!("Syncer failed to dump local store state: {}", err);
                 }
             }
         }
@@ -499,35 +553,35 @@ impl Syncer {
 
     async fn reconcile_with_remote_pull(&mut self) -> Option<Hash> {
         let Some(remote_root_hash) = self.get_fresh_remote_hash().await else {
-            eprintln!("Syncer cannot pull because remote root is unavailable.");
+            tracing::warn!("Syncer cannot pull because remote root is unavailable.");
             return None;
         };
 
         let mut success = false;
 
         {
-            let mut local_node_repository = self.local_node_repository.write().unwrap();
-            let mut remote_node_repository = self.remote_node_repository.write().unwrap();
-            let mut local_blob_repository = self.local_blob_repository.write().unwrap();
-            let mut remote_blob_repository = self.remote_blob_repository.write().unwrap();
+            let local_node_repository = self.local_node_repository.clone();
+            let remote_node_repository = self.remote_node_repository.clone();
+            let local_blob_repository = self.local_blob_repository.clone();
+            let remote_blob_repository = self.remote_blob_repository.clone();
 
             let nodes_before = local_node_repository.len();
             let blobs_before = local_blob_repository.len();
             let result = remote_pull(
-                &mut *local_node_repository,
-                &mut *remote_node_repository,
-                &mut *local_blob_repository,
-                &mut *remote_blob_repository,
+                &*local_node_repository,
+                &*remote_node_repository,
+                &*local_blob_repository,
+                &*remote_blob_repository,
                 &remote_root_hash,
             ).await;
 
             match result {
                 Ok(0) => {
-                    println!("Syncer found no nodes to pull from remote node store.");
+                    tracing::info!("Syncer found no nodes to pull from remote node store.");
                     success = true;
                 }
                 Ok(transferred) => {
-                    println!(
+                    tracing::info!(
                         "Syncer pulled {} nodes and {} blobs from remote (nodes {} -> {}, blobs {} -> {}).",
                         transferred,
                         local_blob_repository.len() - blobs_before,
@@ -539,13 +593,13 @@ impl Syncer {
                     success = true;
                 }
                 Err(SyncError::NodeRepository(NodeRepositoryError::RootConflict { actual })) => {
-                    eprintln!(
+                    tracing::warn!(
                         "Syncer hit root conflict during remote pull; reconcile aborted. Local root: {:?}",
                         actual
                     );
                 }
                 Err(err) => {
-                    eprintln!("Syncer failed to pull from remote: {}", err);
+                    tracing::warn!("Syncer failed to pull from remote: {}", err);
                     return None;
                 }
             }
@@ -556,7 +610,7 @@ impl Syncer {
                     &*local_blob_repository,
                     &dump_dir.join("local_store_dump.txt"),
                 ).await {
-                    eprintln!("Syncer failed to dump local store state: {}", err);
+                    tracing::warn!("Syncer failed to dump local store state: {}", err);
                 }
             }
         }
@@ -566,11 +620,11 @@ impl Syncer {
 
     async fn reconcile_with_merge(&mut self, local_root_hash: &Hash) -> Option<Hash> {
         let Some(base_root_hash) = self.current_base_root() else {
-            eprintln!("Syncer cannot merge because base root is unavailable.");
+            tracing::warn!("Syncer cannot merge because base root is unavailable.");
             return None;
         };
         let Some(remote_root_hash) = self.get_fresh_remote_hash().await else {
-            eprintln!("Syncer cannot merge because remote root is unavailable.");
+            tracing::warn!("Syncer cannot merge because remote root is unavailable.");
             return None;
         };
 
@@ -578,10 +632,10 @@ impl Syncer {
         let mut converged_root: Option<Hash> = None;
 
         {
-            let mut local_node_repository = self.local_node_repository.write().unwrap();
-            let mut remote_node_repository = self.remote_node_repository.write().unwrap();
-            let mut local_blob_repository = self.local_blob_repository.write().unwrap();
-            let mut remote_blob_repository = self.remote_blob_repository.write().unwrap();
+            let local_node_repository = self.local_node_repository.clone();
+            let remote_node_repository = self.remote_node_repository.clone();
+            let local_blob_repository = self.local_blob_repository.clone();
+            let remote_blob_repository = self.remote_blob_repository.clone();
 
             let local_nodes_before = local_node_repository.len();
             let remote_nodes_before = remote_node_repository.len();
@@ -589,10 +643,10 @@ impl Syncer {
             let remote_blobs_before = remote_blob_repository.len();
 
             let result = merge(
-                &mut *local_node_repository,
-                &mut *remote_node_repository,
-                &mut *local_blob_repository,
-                &mut *remote_blob_repository,
+                &*local_node_repository,
+                &*remote_node_repository,
+                &*local_blob_repository,
+                &*remote_blob_repository,
                 &base_root_hash,
                 &local_root_hash,
                 &remote_root_hash,
@@ -600,11 +654,11 @@ impl Syncer {
 
             match result {
                 Ok(0) => {
-                    println!("Syncer merge found no nodes to reconcile.");
+                    tracing::info!("Syncer merge found no nodes to reconcile.");
                     success = true;
                 }
                 Ok(transferred) => {
-                    println!(
+                    tracing::info!(
                         "Syncer merge reconciled {} nodes (local nodes {} -> {}, remote nodes {} -> {}, local blobs {} -> {}, remote blobs {} -> {}).",
                         transferred,
                         local_nodes_before,
@@ -619,13 +673,13 @@ impl Syncer {
                     success = true;
                 }
                 Err(SyncError::NodeRepository(NodeRepositoryError::RootConflict { actual })) => {
-                    eprintln!(
+                    tracing::warn!(
                         "Syncer hit root conflict during merge; reconcile aborted. Observed root: {:?}",
                         actual
                     );
                 }
                 Err(err) => {
-                    eprintln!("Syncer failed to merge: {}", err);
+                    tracing::warn!("Syncer failed to merge: {}", err);
                     return None;
                 }
             }
@@ -634,11 +688,11 @@ impl Syncer {
                 converged_root = match local_node_repository.root_hash().await {
                     Ok(Some(root)) => Some(root.clone()),
                     Ok(None) => {
-                        eprintln!("Syncer merge reported success but local root is unavailable.");
+                        tracing::warn!("Syncer merge reported success but local root is unavailable.");
                         None
                     }
                     Err(err) => {
-                        eprintln!("Syncer failed to read local root after merge: {}", err);
+                        tracing::warn!("Syncer failed to read local root after merge: {}", err);
                         None
                     }
                 };
@@ -650,7 +704,7 @@ impl Syncer {
                     &*local_blob_repository,
                     &dump_dir.join("local_store_dump.txt"),
                 ).await {
-                    eprintln!("Syncer failed to dump local store state: {}", err);
+                    tracing::warn!("Syncer failed to dump local store state: {}", err);
                 }
             }
         }

@@ -1,0 +1,20 @@
+[package]
+name = "phaneros-ipc"
+version = "0.1.0"
+description = "JSON-RPC control-plane protocol shared between phaneros-daemon and its clients (CLI, future GUI)."
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+futures = "0.3"
+phaneros-core = { version = "0.1.0", path = "../phaneros-core" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.18"
+tokio = { version = "1.53.0", features = ["net", "io-util", "rt", "sync"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.0", features = ["full"] }

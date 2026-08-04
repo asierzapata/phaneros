@@ -167,7 +167,7 @@ impl WritableBlobRepository for HttpBlobRepository {
 }
 
 impl HttpBlobRepository {
-    pub fn set_tracker(&mut self, tracker: crate::telemetry::ProgressTracker) {
+    pub fn set_tracker(&self, tracker: crate::telemetry::ProgressTracker) {
         *self.tracker.write().unwrap() = Some(tracker);
     }
 

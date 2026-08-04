@@ -20,12 +20,12 @@ describe('Multi-Tenant Drive Isolation', () => {
     await writeFile(join(harness.paths.vaultA, 'public.txt'), 'Public Drive Data');
     await harness.spawnStore();
 
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
     await waitForStoreRoot(harness.storePort, 'smoke_drive');
 
     // 2. Setup Client C for isolated_drive with secret file in vaultC
     await writeFile(join(harness.paths.vaultC, 'secret.txt'), 'Top Secret Isolated Data');
-    harness.spawnClient('client_c', harness.paths.vaultC, 'isolated_drive');
+    await harness.spawnDaemon('client_c', harness.paths.vaultC, 'isolated_drive');
 
     const isolatedRootHash = await waitForStoreRoot(harness.storePort, 'isolated_drive');
     expect(isolatedRootHash).toBeTruthy();

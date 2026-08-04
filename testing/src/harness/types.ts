@@ -8,6 +8,14 @@ export interface ManagedProcess {
   logStream: WriteStream;
 }
 
+/** A `phanerosd` instance spawned by the harness to simulate one device syncing one drive. */
+export interface DaemonHandle {
+  proc: ManagedProcess;
+  socketPath: string;
+  configPath: string;
+  driveId: string;
+}
+
 export interface TestHarnessPaths {
   sandboxDir: string;
   logsDir: string;

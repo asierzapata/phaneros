@@ -35,13 +35,13 @@ describe('Initial File Synchronization & Ignore Rules', () => {
 
     // 2. Start store server & Client A
     await harness.spawnStore();
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
 
     const initialRootHash = await waitForStoreRoot(harness.storePort, 'smoke_drive');
     expect(initialRootHash).toBeTruthy();
 
     // 3. Start Client B for vault_b
-    harness.spawnClient('client_b', harness.paths.vaultB, 'smoke_drive');
+    await harness.spawnDaemon('client_b', harness.paths.vaultB, 'smoke_drive');
 
     // 4. Assertions on vault_b
     const helloContentB = await waitForFileContent(

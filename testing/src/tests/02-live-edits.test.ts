@@ -28,10 +28,10 @@ describe('Live File Operations & Synchronization', () => {
     await writeFile(join(harness.paths.vaultA, 'data.json'), JSON.stringify({ item: 1 }));
 
     await harness.spawnStore();
-    harness.spawnClient('client_a', harness.paths.vaultA, 'smoke_drive');
+    await harness.spawnDaemon('client_a', harness.paths.vaultA, 'smoke_drive');
     await waitForStoreRoot(harness.storePort, 'smoke_drive');
 
-    harness.spawnClient('client_b', harness.paths.vaultB, 'smoke_drive');
+    await harness.spawnDaemon('client_b', harness.paths.vaultB, 'smoke_drive');
     await waitForFileContent(join(harness.paths.vaultB, 'hello.txt'), 'Hello Initial');
 
     // 2. Live modification test

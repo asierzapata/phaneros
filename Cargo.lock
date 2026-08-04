@@ -1622,7 +1622,9 @@ name = "phaneros-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "phaneros-core",
+ "dirs",
+ "phaneros-ipc",
+ "serde",
  "serde_json",
  "tokio",
 ]
@@ -1650,7 +1652,10 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "toml",
+ "tracing",
+ "tracing-subscriber",
  "zstd",
 ]
 
@@ -1659,8 +1664,28 @@ name = "phaneros-daemon"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "futures",
  "phaneros-core",
+ "phaneros-ipc",
+ "serde_json",
+ "thiserror",
  "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "phaneros-ipc"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "phaneros-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

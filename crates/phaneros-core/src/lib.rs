@@ -9,5 +9,7 @@ pub mod utils;
 pub mod watcher;
 
 pub use config::{ConfigError, DaemonSettings, DriveConfig, PhanerosConfig};
-pub use engine::{EngineConfig, EngineError, SyncEngine};
-pub use telemetry::{MetricsDatabase, ProgressTracker, SyncPhase, SyncProgressEvent, SyncSummary};
+pub use engine::{EngineConfig, EngineError, EngineHandle, SyncEngine};
+pub use telemetry::{
+    DriveStatus, MetricsDatabase, ProgressTracker, SyncPhase, SyncProgressEvent, SyncSummary,
+};

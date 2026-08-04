@@ -158,6 +158,24 @@ impl PhanerosConfig {
         dirs::config_dir().map(|dir| dir.join("phaneros").join("config.toml"))
     }
 
+    /// Returns the default OS-specific IPC socket path
+    /// (`~/Library/Application Support/phaneros/phaneros.sock` on macOS,
+    /// `~/.local/share/phaneros/phaneros.sock` on Linux), used when
+    /// `daemon.ipc_socket` is unset.
+    pub fn default_ipc_socket_path() -> Option<PathBuf> {
+        dirs::data_local_dir().map(|dir| dir.join("phaneros").join("phaneros.sock"))
+    }
+
+    /// Resolves the socket path this daemon should bind to / this client
+    /// should connect to: the configured `daemon.ipc_socket` if set,
+    /// otherwise the default path.
+    pub fn resolve_ipc_socket_path(&self) -> Option<PathBuf> {
+        self.daemon
+            .ipc_socket
+            .clone()
+            .or_else(Self::default_ipc_socket_path)
+    }
+
     /// Loads configuration from a given file path.
     pub fn load_from_path(path: &Path) -> Result<Self, ConfigError> {
         let content = fs::read_to_string(path).map_err(|e| ConfigError::ReadFileFailed {

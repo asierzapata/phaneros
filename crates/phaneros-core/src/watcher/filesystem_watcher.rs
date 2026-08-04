@@ -4,7 +4,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 use thiserror::Error;
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::blob_repository::InMemoryBlobRepository;
 use crate::node_repository::{Hash, InMemoryNodeRepository};
@@ -33,6 +33,7 @@ pub struct Watcher {
 enum WatchEvent {
     FsChanged,
     Rescan(Sender<Result<Hash, crate::scanner::ScannerError>>),
+    Stop,
 }
 
 #[derive(Clone)]
@@ -53,6 +54,15 @@ impl RescanHandle {
             .map_err(|_| RescanError::WatcherStopped)?
             .map_err(RescanError::Scanner)
     }
+
+    /// Tells the watcher thread to stop, which drops its filesystem watch
+    /// and closes the root-hash channel the watcher forwards into. Needed
+    /// for a clean shutdown: the thread otherwise blocks forever on its
+    /// event channel (it holds one of its own senders via the debouncer
+    /// callback, so it can never observe that channel as closed on its own).
+    pub fn stop(&self) {
+        let _ = self.events.send(WatchEvent::Stop);
+    }
 }
 
 /// What `watch` hands to the caller: a receiver of root hashes (one per
@@ -61,8 +71,8 @@ impl RescanHandle {
 pub struct WatchHandle {
     pub root_hashes: Receiver<Hash>,
     pub initial_root_hash: Hash,
-    pub node_repository: Arc<RwLock<InMemoryNodeRepository>>,
-    pub blob_repository: Arc<RwLock<InMemoryBlobRepository>>,
+    pub node_repository: Arc<InMemoryNodeRepository>,
+    pub blob_repository: Arc<InMemoryBlobRepository>,
     pub rescan: RescanHandle,
 }
 
@@ -131,6 +141,7 @@ impl Watcher {
                     WatchEvent::Rescan(reply) => {
                         let _ = reply.send(self.scanner.scan());
                     }
+                    WatchEvent::Stop => break,
                 }
             }
         });
