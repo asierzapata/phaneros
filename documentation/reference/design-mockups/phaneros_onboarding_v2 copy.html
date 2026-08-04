@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phaneros — Setup & Onboarding</title>
+  
+  <!-- Typography System -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* OKLCH Design Tokens */
+    :root {
+      --background: oklch(0.99 0.002 240);
+      --background-dot: #cbd5e1;
+      --foreground: oklch(0.148 0.004 228.8);
+      --card: oklch(1 0 0);
+      --card-foreground: oklch(0.148 0.004 228.8);
+      --primary: oklch(0.5 0.134 242.749);
+      --primary-foreground: oklch(0.977 0.013 236.62);
+      --secondary: oklch(0.967 0.001 286.375);
+      --secondary-foreground: oklch(0.21 0.006 285.885);
+      --muted: oklch(0.963 0.002 197.1);
+      --muted-foreground: oklch(0.52 0.02 220);
+      --border: oklch(0.92 0.005 214.3);
+      --radius: 1.25rem;
+
+      --emerald-green: #059669;
+      --emerald-bg: #ecfdf5;
+      --emerald-border: #a7f3d0;
+
+      --card-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.08), 0 8px 20px -4px rgba(0, 0, 0, 0.04);
+      --card-shadow-hover: 0 28px 65px -10px rgba(0, 0, 0, 0.14);
+    }
+
+    body.dark {
+      --background: oklch(0.148 0.004 228.8);
+      --background-dot: rgba(255, 255, 255, 0.12);
+      --foreground: oklch(0.987 0.002 197.1);
+      --card: oklch(0.218 0.008 223.9);
+      --card-foreground: oklch(0.987 0.002 197.1);
+      --secondary: oklch(0.274 0.006 286.033);
+      --secondary-foreground: oklch(0.985 0 0);
+      --muted: oklch(0.275 0.011 216.9);
+      --muted-foreground: oklch(0.723 0.014 214.4);
+      --border: oklch(1 0 0 / 12%);
+
+      --emerald-green: #34d399;
+      --emerald-bg: rgba(16, 185, 129, 0.14);
+      --emerald-border: rgba(16, 185, 129, 0.35);
+
+      --card-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--background);
+      background-image: radial-gradient(var(--background-dot) 0.85px, transparent 0.85px);
+      background-size: 16px 16px;
+      color: var(--foreground);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .icon-svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    /* Top Bar Header Theme Button */
+    .theme-toggle-header {
+      position: absolute;
+      top: 24px;
+      right: 32px;
+      z-index: 50;
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      color: var(--foreground);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: var(--card-shadow);
+    }
+
+    .icon-btn:hover {
+      background-color: var(--secondary);
+      transform: translateY(-1px);
+    }
+
+    /* WISPR FLOW CONTAINER CARD */
+    .flow-card {
+      width: 100%;
+      max-width: 640px;
+      background-color: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Subtle Progress Track */
+    .progress-bar-track {
+      width: 100%;
+      height: 4px;
+      background-color: var(--secondary);
+      position: relative;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 20%;
+      background-color: var(--primary);
+      transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .flow-body {
+      padding: 44px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* STEP PANELS */
+    .flow-step {
+      display: none;
+      flex-direction: column;
+      gap: 24px;
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    .flow-step.active {
+      display: flex;
+      animation: stepSlide 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes stepSlide {
+      from {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .step-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand-title {
+      font-family: 'Merriweather', serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--foreground);
+      letter-spacing: -0.02em;
+    }
+
+    .step-counter {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      background-color: var(--secondary);
+      padding: 3px 10px;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+    }
+
+    .headline {
+      font-family: 'Merriweather', serif;
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: var(--foreground);
+      letter-spacing: -0.02em;
+      line-height: 1.3;
+    }
+
+    .subheadline {
+      font-size: 0.95rem;
+      color: var(--muted-foreground);
+      line-height: 1.55;
+      margin-top: 6px;
+    }
+
+    /* STEP 2: STORAGE SELECTION CARDS */
+    .option-cards-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .option-card {
+      padding: 20px;
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      background-color: var(--card);
+      cursor: pointer;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .option-card:hover {
+      border-color: var(--primary);
+    }
+
+    .option-card.selected {
+      border-color: var(--primary);
+      background-color: rgba(59, 130, 246, 0.03);
+    }
+
+    .option-radio {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .option-card.selected .option-radio {
+      border-color: var(--primary);
+      background-color: var(--primary);
+    }
+
+    .option-radio-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--primary-foreground);
+      display: none;
+    }
+
+    .option-card.selected .option-radio-dot {
+      display: block;
+    }
+
+    .option-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .option-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .option-title {
+      font-weight: 700;
+      font-size: 0.98rem;
+    }
+
+    .option-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background-color: var(--emerald-bg);
+      color: var(--emerald-green);
+      border: 1px solid var(--emerald-border);
+    }
+
+    .option-desc {
+      font-size: 0.82rem;
+      color: var(--muted-foreground);
+      line-height: 1.45;
+    }
+
+    /* STEP 3: FOLDER TOGGLE LIST */
+    .folder-toggle-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .folder-toggle-card {
+      padding: 16px 20px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background-color: var(--secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .folder-name {
+      font-weight: 700;
+      font-size: 0.92rem;
+    }
+
+    .folder-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--muted-foreground);
+      margin-top: 2px;
+    }
+
+    /* STEP 4: WISPR FLOW "PRACTICE & TEST" MAGIC INTERACTION */
+    .practice-box {
+      padding: 24px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background-color: var(--secondary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      text-align: center;
+    }
+
+    .practice-status {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+
+    .practice-progress-bar {
+      width: 100%;
+      height: 8px;
+      background-color: var(--border);
+      border-radius: 9999px;
+      overflow: hidden;
+      display: none;
+    }
+
+    .practice-progress-fill {
+      width: 0%;
+      height: 100%;
+      background-color: var(--primary);
+      transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .practice-success-badge {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background-color: var(--emerald-bg);
+      color: var(--emerald-green);
+      border: 1px solid var(--emerald-border);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    /* FOOTER BUTTONS */
+    .flow-footer {
+      padding: 20px 48px 36px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border);
+      background-color: rgba(0, 0, 0, 0.01);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: var(--primary-foreground);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background-color: var(--secondary);
+      color: var(--secondary-foreground);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--muted);
+    }
+
+    .text-input {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--foreground);
+      outline: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Theme Toggle -->
+  <div class="theme-toggle-header">
+    <button class="icon-btn" onclick="toggleDarkMode()" title="Toggle Theme">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+    </button>
+  </div>
+
+  <!-- WISPR FLOW CONTAINER CARD -->
+  <div class="flow-card">
+    
+    <!-- Top Track Progress Bar -->
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="track-bar-fill"></div>
+    </div>
+
+    <!-- MAIN BODY -->
+    <div class="flow-body">
+      
+      <!-- STEP 1: WELCOME & PROMISE -->
+      <div class="flow-step active" id="step-1">
+        <div class="step-header-row">
+          <span class="brand-title">Phaneros</span>
+          <span class="step-counter">1 of 5</span>
+        </div>
+
+        <div>
+          <h1 class="headline">Never worry about syncing files again.</h1>
+          <p class="subheadline">
+            Phaneros runs quietly on your Mac, keeping your files safe, encrypted, and up to date automatically.
+          </p>
+        </div>
+
+        <div style="padding: 20px; border-radius: 12px; background-color: var(--secondary); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; font-size: 0.88rem; font-weight: 600;">
+            <svg class="icon-svg" style="color: var(--emerald-green);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Local-First: Your files stay safely on your computer disk.</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; font-size: 0.88rem; font-weight: 600;">
+            <svg class="icon-svg" style="color: var(--emerald-green);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>End-to-End Encrypted: Only you hold the key to your files.</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; font-size: 0.88rem; font-weight: 600;">
+            <svg class="icon-svg" style="color: var(--emerald-green);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Zero Stress: Automatic background sync without manual uploads.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: STORAGE SELECTION -->
+      <div class="flow-step" id="step-2">
+        <div class="step-header-row">
+          <span class="brand-title">Phaneros</span>
+          <span class="step-counter">2 of 5</span>
+        </div>
+
+        <div>
+          <h1 class="headline">Where do you want to keep your backups?</h1>
+          <p class="subheadline">
+            Choose managed cloud storage or connect your own private self-hosted server.
+          </p>
+        </div>
+
+        <div class="option-cards-list">
+          <div class="option-card selected" id="opt-saas" onclick="selectStorage('saas')">
+            <div class="option-radio">
+              <div class="option-radio-dot"></div>
+            </div>
+            <div class="option-info">
+              <div class="option-title-row">
+                <span class="option-title">Phaneros Managed Cloud</span>
+                <span class="option-badge">RECOMMENDED • 7-DAY TRIAL</span>
+              </div>
+              <p class="option-desc">
+                Zero configuration required. Encrypted central cloud storage maintained by Phaneros for $4/month.
+              </p>
+            </div>
+          </div>
+
+          <div class="option-card" id="opt-selfhosted" onclick="selectStorage('selfhosted')">
+            <div class="option-radio">
+              <div class="option-radio-dot"></div>
+            </div>
+            <div class="option-info">
+              <div class="option-title-row">
+                <span class="option-title">Self-Hosted Server</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--muted-foreground);">OPEN SOURCE</span>
+              </div>
+              <p class="option-desc">
+                Connect to your own private server endpoint or home NAS server.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div id="self-hosted-input" style="display: none; margin-top: 4px;">
+          <label style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--muted-foreground);">Server Endpoint URL</label>
+          <input type="text" class="text-input" value="https://sync.mycompany.com/api" placeholder="https://your-server.com/api" style="margin-top: 4px;">
+        </div>
+      </div>
+
+      <!-- STEP 3: FOLDER SELECTION -->
+      <div class="flow-step" id="step-3">
+        <div class="step-header-row">
+          <span class="brand-title">Phaneros</span>
+          <span class="step-counter">3 of 5</span>
+        </div>
+
+        <div>
+          <h1 class="headline">Select folders to keep synchronized</h1>
+          <p class="subheadline">
+            Phaneros watches these folders on your Mac disk and keeps every change in sync.
+          </p>
+        </div>
+
+        <div class="folder-toggle-list">
+          <div class="folder-toggle-card">
+            <div>
+              <div class="folder-name">default</div>
+              <div class="folder-path">~/Documents/PhanerosSync</div>
+            </div>
+            <span style="color: var(--emerald-green); font-weight: 700; font-size: 0.82rem;">● Active</span>
+          </div>
+
+          <div class="folder-toggle-card">
+            <div>
+              <div class="folder-name">code-vault</div>
+              <div class="folder-path">~/Projects/Vault</div>
+            </div>
+            <span style="color: var(--emerald-green); font-weight: 700; font-size: 0.82rem;">● Active</span>
+          </div>
+        </div>
+
+        <button class="btn btn-secondary" style="align-self: flex-start;">
+          <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>Add Folder</span>
+        </button>
+      </div>
+
+      <!-- STEP 4: WISPR FLOW "PRACTICE & TEST" MAGIC MOMENT -->
+      <div class="flow-step" id="step-4">
+        <div class="step-header-row">
+          <span class="brand-title">Phaneros</span>
+          <span class="step-counter">4 of 5</span>
+        </div>
+
+        <div>
+          <h1 class="headline">Try it right now: Test your connection</h1>
+          <p class="subheadline">
+            Click the button below to test a background sync test file before completing setup.
+          </p>
+        </div>
+
+        <div class="practice-box">
+          <p class="practice-status" id="practice-status-text">Click "Test Background Sync" to verify your connection.</p>
+          
+          <div class="practice-progress-bar" id="practice-bar">
+            <div class="practice-progress-fill" id="practice-fill"></div>
+          </div>
+
+          <div class="practice-success-badge" id="practice-success-badge">
+            <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Connection Verified & Test File Synced!</span>
+          </div>
+
+          <button class="btn btn-primary" id="btn-run-practice" onclick="runPracticeTest()" style="margin-top: 8px;">
+            <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            <span>Test Background Sync</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 5: FINAL LAUNCH -->
+      <div class="flow-step" id="step-5">
+        <div class="step-header-row">
+          <span class="brand-title">Phaneros</span>
+          <span class="step-counter">5 of 5</span>
+        </div>
+
+        <div style="text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; margin: 12px 0;">
+          <div style="width: 56px; height: 56px; border-radius: 50%; background-color: var(--emerald-bg); border: 1px solid var(--emerald-border); color: var(--emerald-green); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: bold;">
+            ✓
+          </div>
+          <h1 class="headline">Setup Complete</h1>
+          <p class="subheadline">
+            Phaneros is now active in your Mac top menu bar. Your files are automatically protected.
+          </p>
+        </div>
+
+        <div style="padding: 20px; border-radius: 12px; background-color: var(--secondary); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+            <span style="color: var(--muted-foreground);">Storage Destination:</span>
+            <strong id="summary-target-name">Phaneros Managed Cloud</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+            <span style="color: var(--muted-foreground);">Synced Folders:</span>
+            <strong>2 Folders (`default`, `code-vault`)</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+            <span style="color: var(--muted-foreground);">Connection Status:</span>
+            <span style="color: var(--emerald-green); font-weight: 700;">● Online & Verified</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER NAV -->
+    <div class="flow-footer">
+      <button class="btn btn-secondary" id="btn-back" onclick="navigateStep(-1)" style="visibility: hidden;">
+        <span>Back</span>
+      </button>
+
+      <button class="btn btn-primary" id="btn-next" onclick="navigateStep(1)">
+        <span>Continue</span>
+        <svg class="icon-svg" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+      </button>
+    </div>
+
+  </div>
+
+  <script>
+    let currentStep = 1;
+    let selectedStorage = 'saas';
+    let practiceTested = false;
+
+    function updateStepUI() {
+      // Update top track fill
+      const trackFill = document.getElementById('track-bar-fill');
+      const percents = ['20%', '40%', '60%', '80%', '100%'];
+      trackFill.style.width = percents[currentStep - 1];
+
+      // Hide all steps
+      for (let i = 1; i <= 5; i++) {
+        document.getElementById('step-' + i).classList.remove('active');
+      }
+      document.getElementById('step-' + currentStep).classList.add('active');
+
+      // Back button visibility
+      const btnBack = document.getElementById('btn-back');
+      if (currentStep === 1) {
+        btnBack.style.visibility = 'hidden';
+      } else {
+        btnBack.style.visibility = 'visible';
+      }
+
+      // Next button text
+      const btnNext = document.getElementById('btn-next');
+      if (currentStep === 5) {
+        btnNext.innerHTML = '<span>Open Control Center ↗</span>';
+      } else {
+        btnNext.innerHTML = '<span>Continue</span> <svg class="icon-svg" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>';
+      }
+    }
+
+    function navigateStep(direction) {
+      if (direction === 1 && currentStep === 5) {
+        window.location.href = 'phaneros_main_app_v1.html';
+        return;
+      }
+      currentStep += direction;
+      if (currentStep < 1) currentStep = 1;
+      if (currentStep > 5) currentStep = 5;
+      updateStepUI();
+    }
+
+    function selectStorage(type) {
+      selectedStorage = type;
+      const saasCard = document.getElementById('opt-saas');
+      const selfCard = document.getElementById('opt-selfhosted');
+      const input = document.getElementById('self-hosted-input');
+      const summaryText = document.getElementById('summary-target-name');
+
+      if (type === 'saas') {
+        saasCard.classList.add('selected');
+        selfCard.classList.remove('selected');
+        input.style.display = 'none';
+        summaryText.textContent = 'Phaneros Managed Cloud';
+      } else {
+        selfCard.classList.add('selected');
+        saasCard.classList.remove('selected');
+        input.style.display = 'block';
+        summaryText.textContent = 'Self-Hosted Server (sync.mycompany.com)';
+      }
+    }
+
+    /* Wispr Flow Practice Test Simulation */
+    function runPracticeTest() {
+      const btn = document.getElementById('btn-run-practice');
+      const bar = document.getElementById('practice-bar');
+      const fill = document.getElementById('practice-fill');
+      const status = document.getElementById('practice-status-text');
+      const badge = document.getElementById('practice-success-badge');
+
+      btn.style.display = 'none';
+      bar.style.display = 'block';
+      status.textContent = 'Testing connection and syncing test payload...';
+
+      setTimeout(() => {
+        fill.style.width = '100%';
+      }, 100);
+
+      setTimeout(() => {
+        bar.style.display = 'none';
+        badge.style.display = 'inline-flex';
+        status.textContent = 'Sync test successful! Your connection is ready.';
+        practiceTested = true;
+      }, 1400);
+    }
+
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark');
+    }
+  </script>
+</body>
+</html>

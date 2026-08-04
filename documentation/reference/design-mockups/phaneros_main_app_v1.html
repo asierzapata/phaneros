@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phaneros — Main Desktop Control Center Mockup</title>
+  
+  <!-- Typography System -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Merriweather:ital,wght@0,400;0,700;1,300&display=swap" rel="stylesheet">
+  
+  <style>
+    /* OKLCH Design System Tokens (v1.0 Specification) */
+    :root {
+      --background: oklch(0.99 0.002 240);
+      --background-dot: #cbd5e1;
+      --foreground: oklch(0.148 0.004 228.8);
+      --card: oklch(1 0 0);
+      --card-foreground: oklch(0.148 0.004 228.8);
+      --primary: oklch(0.5 0.134 242.749);
+      --primary-foreground: oklch(0.977 0.013 236.62);
+      --secondary: oklch(0.967 0.001 286.375);
+      --secondary-foreground: oklch(0.21 0.006 285.885);
+      --muted: oklch(0.963 0.002 197.1);
+      --muted-foreground: oklch(0.52 0.02 220);
+      --border: oklch(0.92 0.005 214.3);
+      --input: oklch(0.925 0.005 214.3);
+      --ring: oklch(0.723 0.014 214.4);
+      --radius: 0.75rem;
+
+      /* Semantic Colors */
+      --emerald-green: #059669;
+      --emerald-bg: #ecfdf5;
+      --emerald-border: #a7f3d0;
+
+      --amber-gold: #d97706;
+      --amber-bg: #fffbeb;
+      --amber-border: #fde68a;
+
+      --rose-red: #e11d48;
+      --rose-bg: #fff1f2;
+      --rose-border: #fecdd3;
+
+      /* Card Shadows */
+      --card-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.06), 0 4px 10px -2px rgba(0, 0, 0, 0.03);
+      --card-shadow-hover: 0 16px 36px -4px rgba(0, 0, 0, 0.1), 0 6px 14px -2px rgba(0, 0, 0, 0.05);
+      --modal-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    body.dark {
+      --background: oklch(0.148 0.004 228.8);
+      --background-dot: rgba(255, 255, 255, 0.12);
+      --foreground: oklch(0.987 0.002 197.1);
+      --card: oklch(0.218 0.008 223.9);
+      --card-foreground: oklch(0.987 0.002 197.1);
+      --secondary: oklch(0.274 0.006 286.033);
+      --secondary-foreground: oklch(0.985 0 0);
+      --muted: oklch(0.275 0.011 216.9);
+      --muted-foreground: oklch(0.723 0.014 214.4);
+      --border: oklch(1 0 0 / 12%);
+      --input: oklch(1 0 0 / 18%);
+
+      --emerald-green: #34d399;
+      --emerald-bg: rgba(16, 185, 129, 0.14);
+      --emerald-border: rgba(16, 185, 129, 0.35);
+
+      --amber-gold: #fbbf24;
+      --amber-bg: rgba(245, 158, 11, 0.14);
+      --amber-border: rgba(245, 158, 11, 0.35);
+
+      --rose-red: #fb7185;
+      --rose-bg: rgba(244, 63, 94, 0.14);
+      --rose-border: rgba(244, 63, 94, 0.35);
+
+      --card-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+      --card-shadow-hover: 0 18px 40px rgba(0, 0, 0, 0.65);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--background);
+      background-image: radial-gradient(var(--background-dot) 0.85px, transparent 0.85px);
+      background-size: 16px 16px;
+      color: var(--foreground);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Minimal Monochrome SVG Icon Helper */
+    .icon-svg {
+      width: 15px;
+      height: 15px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    /* ULTRA-CLEAN TRANSPARENT TOP HEADER WITH CENTERED HIG TABS */
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: transparent;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 180px; /* Fixed width to ensure perfect centering of tabs */
+    }
+
+    .brand-title {
+      font-family: 'Merriweather', serif;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--foreground);
+      letter-spacing: -0.02em;
+    }
+
+    .brand-version {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      font-weight: 600;
+      background-color: var(--secondary);
+      color: var(--muted-foreground);
+      padding: 2px 7px;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+    }
+
+    /* CENTERED APPLE HIG SEGMENTED CONTROL TAB BAR */
+    .header-center-tabs {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+    }
+
+    .mac-tab-group {
+      display: inline-flex;
+      align-items: center;
+      background-color: var(--card);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+    }
+
+    .mac-tab-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 16px;
+      border-radius: 7px;
+      font-size: 0.83rem;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .mac-tab-item:hover {
+      color: var(--foreground);
+    }
+
+    .mac-tab-item.active {
+      background-color: var(--secondary);
+      color: var(--foreground);
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+
+    .mac-tab-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      background-color: var(--amber-bg);
+      color: var(--amber-gold);
+      border: 1px solid var(--amber-border);
+      padding: 1px 6px;
+      border-radius: 9999px;
+      font-weight: 700;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      width: 180px; /* Matching width for symmetry */
+    }
+
+    .icon-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      color: var(--foreground);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: var(--card-shadow);
+    }
+
+    .icon-btn:hover {
+      background-color: var(--secondary);
+      transform: translateY(-1px);
+    }
+
+    /* Main Container & Module Views */
+    .main-container {
+      max-width: 1380px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px;
+      flex: 1;
+    }
+
+    .module-view {
+      display: none;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .module-view.active {
+      display: flex;
+    }
+
+    /* Cards Layout */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .card {
+      background-color: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+    }
+
+    .card:hover {
+      box-shadow: var(--card-shadow-hover);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--foreground);
+    }
+
+    .card-subtitle {
+      font-size: 0.78rem;
+      color: var(--muted-foreground);
+    }
+
+    /* Hero System Dashboard Banner */
+    .hero-banner {
+      background-color: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      padding: 24px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .hero-info {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .hero-icon-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background-color: var(--emerald-bg);
+      border: 1px solid var(--emerald-border);
+      color: var(--emerald-green);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      font-weight: bold;
+    }
+
+    .hero-heading {
+      font-family: 'Merriweather', serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--foreground);
+    }
+
+    .hero-subtext {
+      font-size: 0.85rem;
+      color: var(--muted-foreground);
+      margin-top: 4px;
+    }
+
+    /* User-Friendly Dashboard Telemetry Cards */
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .telemetry-card {
+      background-color: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .telemetry-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted-foreground);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .telemetry-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--foreground);
+    }
+
+    .telemetry-detail {
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+    }
+
+    /* Extension Badges & Mono Tags */
+    .ext-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background-color: var(--secondary);
+      color: var(--secondary-foreground);
+      border: 1px solid var(--border);
+      text-transform: uppercase;
+    }
+
+    .tag-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 9999px;
+    }
+
+    .tag-green {
+      background-color: var(--emerald-bg);
+      color: var(--emerald-green);
+      border: 1px solid var(--emerald-border);
+    }
+
+    .tag-amber {
+      background-color: var(--amber-bg);
+      color: var(--amber-gold);
+      border: 1px solid var(--amber-border);
+    }
+
+    /* Buttons & Controls */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: var(--radius);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: var(--primary-foreground);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+    }
+
+    .btn-secondary {
+      background-color: var(--secondary);
+      color: var(--secondary-foreground);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--muted);
+    }
+
+    .btn-amber {
+      background-color: var(--amber-bg);
+      color: var(--amber-gold);
+      border-color: var(--amber-border);
+    }
+
+    /* DRIVE EXPLORER — Inspired by @pierre/trees (trees.software) */
+    .tree-explorer-layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 20px;
+    }
+
+    .drive-selector-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .drive-item-card {
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: var(--card-shadow);
+    }
+
+    .drive-item-card:hover {
+      border-color: var(--primary);
+    }
+
+    .drive-item-card.active {
+      border-color: var(--primary);
+      background-color: var(--secondary);
+      box-shadow: var(--card-shadow-hover);
+    }
+
+    .drive-name-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 0.88rem;
+    }
+
+    .drive-meta-card {
+      background-color: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .meta-pills-row {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .meta-stat-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .meta-stat-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+    }
+
+    .meta-stat-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    /* Pierre Trees.software Style Visual Tree Component */
+    .trees-component {
+      background-color: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .trees-header-bar {
+      padding: 10px 16px;
+      background-color: var(--secondary);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted-foreground);
+    }
+
+    .tree-node-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.84rem;
+      cursor: pointer;
+    }
+
+    .tree-node-row:last-child {
+      border-bottom: none;
+    }
+
+    .tree-node-row:hover {
+      background-color: var(--secondary);
+    }
+
+    .tree-node-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tree-indent-guide {
+      width: 16px;
+      height: 20px;
+      border-left: 1px solid var(--border);
+      margin-right: 4px;
+      display: inline-block;
+    }
+
+    .tree-node-name {
+      font-weight: 500;
+      color: var(--foreground);
+    }
+
+    .tree-node-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--muted-foreground);
+    }
+
+    /* CONFLICT RESOLVER — Inspired by diffs.com (Pierre Computer Co.) */
+    .diffs-container {
+      background-color: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .diffs-toolbar {
+      padding: 12px 18px;
+      background-color: var(--secondary);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .diffs-file-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .diffs-view-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .diffs-view-btn {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      color: var(--muted-foreground);
+      cursor: pointer;
+    }
+
+    .diffs-view-btn.active {
+      background-color: var(--primary);
+      color: var(--primary-foreground);
+      border-color: var(--primary);
+    }
+
+    .diffs-split-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      divide-x: 1px solid var(--border);
+    }
+
+    .diffs-column {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .diffs-col-header {
+      padding: 8px 14px;
+      background-color: rgba(0, 0, 0, 0.02);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--muted-foreground);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .diffs-editor-body {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.65;
+      padding: 12px 0;
+      overflow-x: auto;
+    }
+
+    .diffs-row {
+      display: flex;
+      align-items: center;
+      padding: 2px 0;
+    }
+
+    .diffs-gutter {
+      width: 44px;
+      text-align: right;
+      padding-right: 12px;
+      color: var(--muted-foreground);
+      user-select: none;
+      font-size: 0.74rem;
+    }
+
+    .diffs-text {
+      flex: 1;
+      padding-right: 14px;
+      white-space: pre;
+    }
+
+    /* Word-Level Diff Highlights (Diffs.com Signature Feature) */
+    .diffs-row.added {
+      background-color: var(--emerald-bg);
+    }
+
+    .diffs-row.added .diffs-text {
+      color: var(--emerald-green);
+    }
+
+    .diffs-word-added {
+      background-color: rgba(5, 150, 105, 0.25);
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-weight: 700;
+    }
+
+    .diffs-row.removed {
+      background-color: var(--rose-bg);
+    }
+
+    .diffs-row.removed .diffs-text {
+      color: var(--rose-red);
+    }
+
+    .diffs-word-removed {
+      background-color: rgba(225, 29, 72, 0.25);
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-weight: 700;
+      text-decoration: line-through;
+    }
+
+    /* Digestible Binary Metadata Comparison Matrix */
+    .digest-matrix {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .digest-matrix th {
+      background-color: var(--secondary);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .digest-matrix td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TRANSPARENT TOP HEADER WITH CENTERED HIG TABS -->
+  <header class="app-header">
+    
+    <!-- Left: Brand Title & Version -->
+    <div class="brand-section">
+      <span class="brand-title">Phaneros</span>
+      <span class="brand-version">v1.0</span>
+    </div>
+
+    <!-- Center: Perfectly Centered Apple HIG Segmented Tab Group -->
+    <div class="header-center-tabs">
+      <div class="mac-tab-group">
+        <button class="mac-tab-item active" onclick="switchModule('dashboard', this)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="mac-tab-item" onclick="switchModule('drives', this)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          <span>Drives & Files</span>
+        </button>
+
+        <button class="mac-tab-item" onclick="switchModule('conflict', this)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <span>Conflicts</span>
+          <span class="mac-tab-badge">1</span>
+        </button>
+
+        <button class="mac-tab-item" onclick="switchModule('activity', this)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          <span>Activity</span>
+        </button>
+
+        <button class="mac-tab-item" onclick="switchModule('settings', this)">
+          <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <span>Settings</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right: Theme Toggle Only -->
+    <div class="header-actions">
+      <button class="icon-btn" onclick="toggleDarkMode()" title="Toggle Theme">
+        <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+    </div>
+
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="main-container">
+
+    <!-- MODULE 1: SYSTEM DASHBOARD -->
+    <section id="module-dashboard" class="module-view active">
+      
+      <!-- Hero Health Banner -->
+      <div class="hero-banner">
+        <div class="hero-info">
+          <div class="hero-icon-badge">✓</div>
+          <div>
+            <div class="hero-heading">Everything is Up to Date</div>
+            <div class="hero-subtext">3 Synced Drives • Connected to Phaneros Central Cloud</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="padding: 10px 18px;">
+          <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+          <span>Sync Now</span>
+        </button>
+      </div>
+
+      <!-- User-Friendly Dashboard Telemetry Cards -->
+      <div class="telemetry-grid">
+        
+        <!-- 1. Last Sync -->
+        <div class="telemetry-card">
+          <div class="telemetry-label">
+            <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Last Synced</span>
+          </div>
+          <div class="telemetry-value">2m ago</div>
+          <div class="telemetry-detail">Automatic cloud background sync</div>
+        </div>
+
+        <!-- 2. Storage Saved (Deduplication Ratio) -->
+        <div class="telemetry-card">
+          <div class="telemetry-label">
+            <svg class="icon-svg" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            <span>Deduplication Ratio</span>
+          </div>
+          <div class="telemetry-value">1.85 ×</div>
+          <div class="telemetry-detail">Saved 42.8 GB across identical files</div>
+        </div>
+
+        <!-- 3. Compression Efficiency -->
+        <div class="telemetry-card">
+          <div class="telemetry-label">
+            <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+            <span>Compression Ratio</span>
+          </div>
+          <div class="telemetry-value">32%</div>
+          <div class="telemetry-detail">Reduced transfer payload size</div>
+        </div>
+
+        <!-- 4. Sync Speed / Throughput -->
+        <div class="telemetry-card">
+          <div class="telemetry-label">
+            <svg class="icon-svg" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+            <span>Transfer Speed</span>
+          </div>
+          <div class="telemetry-value">4.2 MB/s</div>
+          <div class="telemetry-detail">Peak bandwidth utilization</div>
+        </div>
+
+      </div>
+
+      <!-- Configured Vault Drives Cards Grid -->
+      <div>
+        <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); margin-bottom: 12px;">
+          Configured Storage Drives
+        </div>
+        <div class="grid-3">
+          
+          <!-- Drive Card 1 -->
+          <div class="card">
+            <div class="card-header">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-weight: 700; font-size: 0.95rem;">default</span>
+                <span class="tag-badge tag-green">● Up to date</span>
+              </div>
+            </div>
+            <div style="font-size: 0.78rem; font-family: 'JetBrains Mono', monospace; color: var(--muted-foreground);">
+              ~/Documents/PhanerosSync
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+              <span style="font-size: 0.8rem; color: var(--muted-foreground);">Storage Used</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 700;">42.8 / 100 GB (42%)</span>
+            </div>
+            <div style="width: 100%; height: 6px; background-color: var(--secondary); border-radius: 9999px; overflow: hidden;">
+              <div style="width: 42%; height: 100%; background-color: var(--primary);"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--muted-foreground); margin-top: 4px;">
+              <span>Synced 2m ago</span>
+              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.72rem;" onclick="switchModule('drives', document.querySelectorAll('.mac-tab-item')[1])">Explore Files ↗</button>
+            </div>
+          </div>
+
+          <!-- Drive Card 2 -->
+          <div class="card">
+            <div class="card-header">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-weight: 700; font-size: 0.95rem;">code-vault</span>
+                <span class="tag-badge tag-green">● Up to date</span>
+              </div>
+            </div>
+            <div style="font-size: 0.78rem; font-family: 'JetBrains Mono', monospace; color: var(--muted-foreground);">
+              ~/Projects/Vault
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+              <span style="font-size: 0.8rem; color: var(--muted-foreground);">Storage Used</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 700;">14.1 / 50 GB (28%)</span>
+            </div>
+            <div style="width: 100%; height: 6px; background-color: var(--secondary); border-radius: 9999px; overflow: hidden;">
+              <div style="width: 28%; height: 100%; background-color: var(--primary);"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--muted-foreground); margin-top: 4px;">
+              <span>Synced 5m ago</span>
+              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.72rem;" onclick="switchModule('drives', document.querySelectorAll('.mac-tab-item')[1])">Explore Files ↗</button>
+            </div>
+          </div>
+
+          <!-- Drive Card 3 -->
+          <div class="card">
+            <div class="card-header">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-weight: 700; font-size: 0.95rem;">media-archive</span>
+                <span class="tag-badge tag-amber">1 Conflict</span>
+              </div>
+            </div>
+            <div style="font-size: 0.78rem; font-family: 'JetBrains Mono', monospace; color: var(--muted-foreground);">
+              ~/Volumes/EncryptedMedia
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+              <span style="font-size: 0.8rem; color: var(--muted-foreground);">Storage Used</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 700;">182.4 / 250 GB (73%)</span>
+            </div>
+            <div style="width: 100%; height: 6px; background-color: var(--secondary); border-radius: 9999px; overflow: hidden;">
+              <div style="width: 73%; height: 100%; background-color: var(--amber-gold);"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--muted-foreground); margin-top: 4px;">
+              <span>Attention required</span>
+              <button class="btn btn-amber" style="padding: 4px 10px; font-size: 0.72rem;" onclick="switchModule('conflict', document.querySelectorAll('.mac-tab-item')[2])">Resolve Conflict ↗</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <!-- MODULE 2: DRIVE & FILES EXPLORER (Powered by trees.software UI style) -->
+    <section id="module-drives" class="module-view">
+      
+      <div class="tree-explorer-layout">
+        
+        <!-- Left: Drive Selector Pane -->
+        <div class="drive-selector-list">
+          <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--muted-foreground); margin-bottom: 4px;">Select Storage Drive</div>
+          
+          <div class="drive-item-card active" onclick="selectDrive('default', this)">
+            <div class="drive-name-row">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                <span>default</span>
+              </div>
+              <span class="tag-badge tag-green">✓ Synced</span>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground);">~/Documents/PhanerosSync</div>
+          </div>
+
+          <div class="drive-item-card" onclick="selectDrive('code-vault', this)">
+            <div class="drive-name-row">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                <span>code-vault</span>
+              </div>
+              <span class="tag-badge tag-green">✓ Synced</span>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground);">~/Projects/Vault</div>
+          </div>
+
+          <div class="drive-item-card" onclick="selectDrive('media-archive', this)">
+            <div class="drive-name-row">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                <span>media-archive</span>
+              </div>
+              <span class="tag-badge tag-amber">1 Conflict</span>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground);">~/Volumes/EncryptedMedia</div>
+          </div>
+        </div>
+
+        <!-- Right Pane: Metadata Summary Card Top + Trees.software Component Below -->
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          
+          <!-- Top Metadata Summary Card -->
+          <div class="drive-meta-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div>
+                <div style="font-family: 'Merriweather', serif; font-size: 1.15rem; font-weight: 700;" id="active-drive-title">Drive: default</div>
+                <div style="font-size: 0.8rem; color: var(--muted-foreground);" id="active-drive-path">Local Path: <code>~/Documents/PhanerosSync</code></div>
+              </div>
+              <button class="btn btn-secondary" style="font-size: 0.75rem;">Open Folder ↗</button>
+            </div>
+
+            <div class="meta-pills-row">
+              <div class="meta-stat-item">
+                <span class="meta-stat-label">Storage Usage</span>
+                <span class="meta-stat-val" id="active-drive-storage">42.8 GB / 100 GB (42%)</span>
+              </div>
+              <div class="meta-stat-item">
+                <span class="meta-stat-label">Last Synced</span>
+                <span class="meta-stat-val">2 minutes ago</span>
+              </div>
+              <div class="meta-stat-item">
+                <span class="meta-stat-label">Storage Saved</span>
+                <span class="meta-stat-val">1.85× (Deduplicated)</span>
+              </div>
+              <div class="meta-stat-item">
+                <span class="meta-stat-label">Server Connection</span>
+                <span class="meta-stat-val" style="color: var(--emerald-green);">● Connected</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom: Interactive File Tree (trees.software rendering style) -->
+          <div class="trees-component">
+            <div class="trees-header-bar">
+              <span>File Hierarchy & Path</span>
+              <span>Size • Last Modified • Status</span>
+            </div>
+
+            <div id="tree-content-list">
+              
+              <!-- Folder: docs -->
+              <div class="tree-node-row">
+                <div class="tree-node-left">
+                  <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                  <span class="tree-node-name">docs</span>
+                </div>
+                <div class="tree-node-right">
+                  <span>3 Items</span>
+                  <span>Today 13:04</span>
+                  <span class="tag-badge tag-green">✓ Synced</span>
+                </div>
+              </div>
+
+              <!-- File: sync-protocol.md -->
+              <div class="tree-node-row">
+                <div class="tree-node-left">
+                  <span class="tree-indent-guide"></span>
+                  <svg class="icon-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                  <span class="tree-node-name">sync-protocol.md</span>
+                  <span class="ext-badge">MD</span>
+                </div>
+                <div class="tree-node-right">
+                  <span>13.5 KB</span>
+                  <span>Today 13:04</span>
+                  <span class="tag-badge tag-green">✓ Synced</span>
+                </div>
+              </div>
+
+              <!-- File: roadmap.md -->
+              <div class="tree-node-row">
+                <div class="tree-node-left">
+                  <span class="tree-indent-guide"></span>
+                  <svg class="icon-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                  <span class="tree-node-name">roadmap.md</span>
+                  <span class="ext-badge">MD</span>
+                </div>
+                <div class="tree-node-right">
+                  <span>6.4 KB</span>
+                  <span>Yesterday</span>
+                  <span class="tag-badge tag-green">✓ Synced</span>
+                </div>
+              </div>
+
+              <!-- Folder: src -->
+              <div class="tree-node-row">
+                <div class="tree-node-left">
+                  <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                  <span class="tree-node-name">src</span>
+                </div>
+                <div class="tree-node-right">
+                  <span>8 Items</span>
+                  <span>Today 12:40</span>
+                  <span class="tag-badge tag-green">✓ Synced</span>
+                </div>
+              </div>
+
+              <!-- File: database.sqlite -->
+              <div class="tree-node-row">
+                <div class="tree-node-left">
+                  <svg class="icon-svg" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M21 19c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14"></path><path d="M21 5v14"></path></svg>
+                  <span class="tree-node-name">database.sqlite</span>
+                  <span class="ext-badge">DB</span>
+                </div>
+                <div class="tree-node-right">
+                  <span>14.2 MB</span>
+                  <span>Today 13:01</span>
+                  <span class="tag-badge tag-amber">Conflict</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- MODULE 3: CONFLICT RESOLVER (Powered by Diffs.com style for text & Digestible Matrix for binary) -->
+    <section id="module-conflict" class="module-view">
+      
+      <!-- Conflict Case Toggle Bar -->
+      <div style="display: flex; justify-content: space-between; align-items: center; background-color: var(--card); padding: 12px 18px; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--card-shadow);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-weight: 700; font-size: 0.88rem;">Conflict Type Preview:</span>
+          <button class="btn btn-secondary active" id="btn-mode-text" onclick="switchConflictMode('text')">
+            <span>Code & Text File (Diffs.com Style)</span>
+          </button>
+          <button class="btn btn-secondary" id="btn-mode-binary" onclick="switchConflictMode('binary')">
+            <span>Binary Database File (Digestible Metadata)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- CASE A: CODE / TEXT FILE DIFF (DIFFS.COM STYLE) -->
+      <div id="conflict-view-text" style="display: flex; flex-direction: column; gap: 16px;">
+        
+        <div class="diffs-container">
+          <!-- Diffs.com Style Toolbar -->
+          <div class="diffs-toolbar">
+            <div class="diffs-file-path">
+              <svg class="icon-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              <span>docs/README.md</span>
+              <span class="tag-badge tag-amber">Sync Conflict</span>
+            </div>
+
+            <div class="diffs-view-controls">
+              <button class="diffs-view-btn active">Split View</button>
+              <button class="diffs-view-btn">Unified View</button>
+              <button class="diffs-view-btn">Word Diff: On</button>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary" style="font-size: 0.75rem;">Keep My Local File</button>
+              <button class="btn btn-secondary" style="font-size: 0.75rem;">Keep Server Version</button>
+              <button class="btn btn-primary" style="font-size: 0.75rem;">Save Merged File</button>
+            </div>
+          </div>
+
+          <!-- Split Diff View (Diffs.com Word-Level Diff Rendering) -->
+          <div class="diffs-split-grid">
+            
+            <!-- Left Side: Local File -->
+            <div class="diffs-column">
+              <div class="diffs-col-header">
+                <span>My Local Version</span>
+                <span>Modified 2m ago</span>
+              </div>
+              <div class="diffs-editor-body">
+                <div class="diffs-row"><span class="diffs-gutter">1</span><span class="diffs-text"># Phaneros Sync Engine</span></div>
+                <div class="diffs-row"><span class="diffs-gutter">2</span><span class="diffs-text"></span></div>
+                <div class="diffs-row added"><span class="diffs-gutter">3</span><span class="diffs-text">+ Fast local-first sync with <span class="diffs-word-added">deduplication & compression</span>.</span></div>
+                <div class="diffs-row"><span class="diffs-gutter">4</span><span class="diffs-text"></span></div>
+                <div class="diffs-row"><span class="diffs-gutter">5</span><span class="diffs-text">## Core Features</span></div>
+              </div>
+            </div>
+
+            <!-- Right Side: Server Version -->
+            <div class="diffs-column">
+              <div class="diffs-col-header">
+                <span>Phaneros Server Version</span>
+                <span>Modified 5m ago</span>
+              </div>
+              <div class="diffs-editor-body">
+                <div class="diffs-row"><span class="diffs-gutter">1</span><span class="diffs-text"># Phaneros Sync Engine</span></div>
+                <div class="diffs-row"><span class="diffs-gutter">2</span><span class="diffs-text"></span></div>
+                <div class="diffs-row removed"><span class="diffs-gutter">3</span><span class="diffs-text">- High-speed rust sync engine with <span class="diffs-word-removed">central cloud store</span>.</span></div>
+                <div class="diffs-row"><span class="diffs-gutter">4</span><span class="diffs-text"></span></div>
+                <div class="diffs-row"><span class="diffs-gutter">5</span><span class="diffs-text">## Core Features</span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CASE B: DIGESTIBLE OPAQUE BINARY FILE METADATA COMPARISON -->
+      <div id="conflict-view-binary" style="display: none; flex-direction: column; gap: 16px;">
+        
+        <div class="card" style="border-color: var(--amber-border);">
+          <div class="card-header">
+            <div>
+              <div class="card-title" style="color: var(--amber-gold);">Binary File Sync Conflict: <code>database.sqlite</code></div>
+              <div class="card-subtitle">Binary database files cannot be compared line-by-line. Review the simple file summary below to pick a version.</div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary">Keep My Local Copy (14.2 MB)</button>
+              <button class="btn btn-secondary">Keep Server Copy (15.8 MB)</button>
+              <button class="btn btn-amber">Save Both Files (.conflict-copy)</button>
+            </div>
+          </div>
+
+          <table class="digest-matrix">
+            <thead>
+              <tr>
+                <th>File Property</th>
+                <th>My Local Computer Copy</th>
+                <th>Central Cloud Server Copy</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>File Name</strong></td>
+                <td><code>database.sqlite</code></td>
+                <td><code>database.sqlite</code></td>
+              </tr>
+              <tr>
+                <td><strong>File Size</strong></td>
+                <td><strong>14.2 MB</strong> (14,889,984 bytes)</td>
+                <td><strong>15.8 MB</strong> (16,567,296 bytes)</td>
+              </tr>
+              <tr>
+                <td><strong>Last Modified Time</strong></td>
+                <td>Today at 13:01 (2 minutes ago)</td>
+                <td>Today at 12:58 (5 minutes ago)</td>
+              </tr>
+              <tr>
+                <td><strong>Unique Version ID</strong></td>
+                <td><code class="hash-badge">v4-local</code></td>
+                <td><code class="hash-badge">v3-server</code></td>
+              </tr>
+              <tr>
+                <td><strong>Recommended Action</strong></td>
+                <td><span style="color: var(--emerald-green); font-weight: 600;">✓ Newest modified copy</span></td>
+                <td><span>Older cloud copy</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- MODULE 4: ACTIVITY LOG -->
+    <section id="module-activity" class="module-view">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Recent Background Sync Activity</div>
+            <div class="card-subtitle">Event history for cloud transfers and changes</div>
+          </div>
+          <button class="btn btn-secondary" style="font-size: 0.75rem;">Clear Log</button>
+        </div>
+
+        <table class="table-container" style="width: 100%; border-collapse: collapse; font-size: 0.84rem;">
+          <thead>
+            <tr style="text-align: left; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--muted-foreground); border-bottom: 1px solid var(--border);">
+              <th style="padding: 10px;">Time</th>
+              <th style="padding: 10px;">Drive</th>
+              <th style="padding: 10px;">Action</th>
+              <th style="padding: 10px;">File Name</th>
+              <th style="padding: 10px;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 12px 10px; font-family: 'JetBrains Mono', monospace;">13:04:12</td>
+              <td style="padding: 12px 10px; font-weight: 600;">default</td>
+              <td style="padding: 12px 10px;">Updated file</td>
+              <td style="padding: 12px 10px;"><code>docs/sync-protocol.md</code></td>
+              <td style="padding: 12px 10px; color: var(--emerald-green); font-weight: 600;">Completed</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 12px 10px; font-family: 'JetBrains Mono', monospace;">13:01:10</td>
+              <td style="padding: 12px 10px; font-weight: 600;">media-archive</td>
+              <td style="padding: 12px 10px;">Conflict detected</td>
+              <td style="padding: 12px 10px;"><code>database.sqlite</code></td>
+              <td style="padding: 12px 10px; color: var(--amber-gold); font-weight: 600;">Pending user review</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- MODULE 5: SETTINGS -->
+    <section id="module-settings" class="module-view">
+      <div class="grid-2">
+        
+        <div class="card">
+          <div class="card-title">Central Storage Connection</div>
+          <div style="font-size: 0.85rem; color: var(--muted-foreground); margin-top: 4px;">
+            Server Endpoint: <code>https://sync.phaneros.app/api</code>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background-color: var(--secondary); border-radius: 8px; border: 1px solid var(--border); margin-top: 8px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.88rem;">Phaneros Cloud Server</div>
+              <div style="font-size: 0.75rem; color: var(--emerald-green); font-weight: 600;">● Online & Connected</div>
+            </div>
+            <button class="btn btn-secondary" style="font-size: 0.75rem;">Re-authenticate</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Sync Preferences</div>
+          <div style="display: flex; flex-direction: column; gap: 12px; font-size: 0.85rem; margin-top: 8px;">
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Automatic Background Sync</span>
+              <input type="checkbox" checked>
+            </label>
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Show Desktop Notifications on Sync Conflict</span>
+              <input type="checkbox" checked>
+            </label>
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Smart File Compression</span>
+              <input type="checkbox" checked>
+            </label>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    function switchModule(moduleId, tabElement) {
+      document.querySelectorAll('.module-view').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.mac-tab-item').forEach(el => el.classList.remove('active'));
+      
+      const targetModule = document.getElementById('module-' + moduleId);
+      if (targetModule) {
+        targetModule.classList.add('active');
+      }
+      if (tabElement) {
+        tabElement.classList.add('active');
+      }
+    }
+
+    function selectDrive(driveId, element) {
+      document.querySelectorAll('.drive-item-card').forEach(el => el.classList.remove('active'));
+      element.classList.add('active');
+
+      const titleEl = document.getElementById('active-drive-title');
+      const pathEl = document.getElementById('active-drive-path');
+      const storageEl = document.getElementById('active-drive-storage');
+
+      if (driveId === 'default') {
+        titleEl.textContent = 'Drive: default';
+        pathEl.innerHTML = 'Local Path: <code>~/Documents/PhanerosSync</code>';
+        storageEl.textContent = '42.8 GB / 100 GB (42%)';
+      } else if (driveId === 'code-vault') {
+        titleEl.textContent = 'Drive: code-vault';
+        pathEl.innerHTML = 'Local Path: <code>~/Projects/Vault</code>';
+        storageEl.textContent = '14.1 GB / 50 GB (28%)';
+      } else if (driveId === 'media-archive') {
+        titleEl.textContent = 'Drive: media-archive';
+        pathEl.innerHTML = 'Local Path: <code>~/Volumes/EncryptedMedia</code>';
+        storageEl.textContent = '182.4 GB / 250 GB (73%)';
+      }
+    }
+
+    function switchConflictMode(mode) {
+      const textView = document.getElementById('conflict-view-text');
+      const binaryView = document.getElementById('conflict-view-binary');
+      const btnText = document.getElementById('btn-mode-text');
+      const btnBinary = document.getElementById('btn-mode-binary');
+
+      if (mode === 'text') {
+        textView.style.display = 'flex';
+        binaryView.style.display = 'none';
+        btnText.classList.add('active');
+        btnBinary.classList.remove('active');
+      } else {
+        textView.style.display = 'none';
+        binaryView.style.display = 'flex';
+        btnText.classList.remove('active');
+        btnBinary.classList.add('active');
+      }
+    }
+
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark');
+    }
+  </script>
+</body>
+</html>
