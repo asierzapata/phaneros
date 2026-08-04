@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::blob_repository::{BlobRepository, BlobRepositoryError};
 use crate::node_repository::{Hash, Node, NodeRepository, NodeRepositoryError};
-use crate::scanner::file_chunker::{DEFAULT_CHUNK_SIZE, FileChunkerError, file_node_hash};
+use crate::scanner::file_chunker::{FileChunkerConfig, FileChunkerError, file_node_hash};
 use crate::utils::filesystem_write::{is_internal_entry, move_to_trash, write_atomic};
 
 #[derive(Debug, Error)]
@@ -209,7 +209,7 @@ impl<N: NodeRepository, B: BlobRepository> Materializer<'_, N, B> {
             return Ok(false);
         }
 
-        let hash = file_node_hash(path, DEFAULT_CHUNK_SIZE).map_err(|source| {
+        let hash = file_node_hash(path, FileChunkerConfig::default()).map_err(|source| {
             MaterializeError::HashLocalFile {
                 path: path.display().to_string(),
                 source,

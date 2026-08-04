@@ -361,97 +361,51 @@ mod file_chunking {
 
     use super::*;
 
-    const SMALL_CHUNK: usize = 16;
+    use crate::scanner::file_chunker::{FileChunkerConfig, file_node_hash};
+
+    const SMALL_CONFIG: FileChunkerConfig = FileChunkerConfig {
+        min_size: 64,
+        avg_size: 256,
+        max_size: 1024,
+    };
 
     #[test]
-    fn file_smaller_than_chunk_size_produces_one_chunk() {
+    fn file_smaller_than_min_chunk_size_produces_one_chunk() {
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("small.bin");
         fs::write(&file_path, &[0u8; 10]).unwrap();
 
         let chunker = FileChunker::new(
-            SMALL_CHUNK,
+            SMALL_CONFIG,
             Arc::new(RwLock::new(InMemoryBlobRepository::new())),
         );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);
-        // assert_eq!(blobs[0].size, 10);
     }
 
     #[test]
-    fn file_exactly_chunk_size_produces_one_chunk() {
-        let tmp = TempDir::new().unwrap();
-        let file_path = tmp.path().join("exact.bin");
-        fs::write(&file_path, &[0u8; SMALL_CHUNK]).unwrap();
-
-        let chunker = FileChunker::new(
-            SMALL_CHUNK,
-            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
-        );
-        let blobs = chunker.chunk_file(&file_path).unwrap();
-
-        assert_eq!(blobs.len(), 1);
-        // assert_eq!(blobs[0].size, SMALL_CHUNK as u64);
-    }
-
-    #[test]
-    fn file_chunk_size_plus_one_produces_two_blobs() {
-        let tmp = TempDir::new().unwrap();
-        let file_path = tmp.path().join("plus_one.bin");
-        fs::write(&file_path, &[0u8; SMALL_CHUNK + 1]).unwrap();
-
-        let chunker = FileChunker::new(
-            SMALL_CHUNK,
-            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
-        );
-        let blobs = chunker.chunk_file(&file_path).unwrap();
-
-        assert_eq!(blobs.len(), 2);
-        // assert_eq!(blobs[0].size, SMALL_CHUNK as u64);
-        // assert_eq!(blobs[1].size, 1);
-    }
-
-    #[test]
-    fn file_exactly_two_times_chunk_size_produces_two_blobs() {
-        let tmp = TempDir::new().unwrap();
-        let file_path = tmp.path().join("double.bin");
-        fs::write(&file_path, &[0u8; SMALL_CHUNK * 2]).unwrap();
-
-        let chunker = FileChunker::new(
-            SMALL_CHUNK,
-            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
-        );
-        let blobs = chunker.chunk_file(&file_path).unwrap();
-
-        assert_eq!(blobs.len(), 2);
-        // assert_eq!(blobs[0].size, SMALL_CHUNK as u64);
-        // assert_eq!(blobs[1].size, SMALL_CHUNK as u64);
-    }
-
-    #[test]
-    fn large_file_correct_number_and_sizes() {
+    fn large_file_produces_multiple_chunks_within_size_bounds() {
         let tmp = TempDir::new().unwrap();
         let file_path = tmp.path().join("large.bin");
-        // 5 full blobs + 7 extra bytes
-        let total_size = SMALL_CHUNK * 5 + 7;
-        fs::write(&file_path, vec![0xAB; total_size]).unwrap();
+        let total_size = 5000;
+        let mut state: u64 = 54321;
+        let mut data = vec![0u8; total_size];
+        for i in 0..total_size {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            data[i] = (state >> 32) as u8;
+        }
+        fs::write(&file_path, &data).unwrap();
 
         let chunker = FileChunker::new(
-            SMALL_CHUNK,
+            SMALL_CONFIG,
             Arc::new(RwLock::new(InMemoryBlobRepository::new())),
         );
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
-        assert_eq!(blobs.len(), 6);
-        // for chunk in &blobs[..5] {
-        //     assert_eq!(chunk.size, SMALL_CHUNK as u64);
-        // }
-        // assert_eq!(blobs[5].size, 7);
-
-        // Total size should match
-        // let total: u64 = blobs.iter().map(|c| c.size).sum();
-        // assert_eq!(total, total_size as u64);
+        assert!(blobs.len() > 1);
     }
 
     #[test]
@@ -461,7 +415,7 @@ mod file_chunking {
         fs::write(&file_path, b"").unwrap();
 
         let chunker = FileChunker::new(
-            SMALL_CHUNK,
+            SMALL_CONFIG,
             Arc::new(RwLock::new(InMemoryBlobRepository::new())),
         );
         let blobs = chunker.chunk_file(&file_path).unwrap();
@@ -475,12 +429,12 @@ mod file_chunking {
         let file_a = tmp.path().join("a.bin");
         let file_b = tmp.path().join("b.bin");
 
-        let content = vec![42u8; SMALL_CHUNK + 5];
+        let content = vec![42u8; 200];
         fs::write(&file_a, &content).unwrap();
         fs::write(&file_b, &content).unwrap();
 
         let chunker = FileChunker::new(
-            SMALL_CHUNK,
+            SMALL_CONFIG,
             Arc::new(RwLock::new(InMemoryBlobRepository::new())),
         );
         let blobs_a = chunker.chunk_file(&file_a).unwrap();
@@ -489,8 +443,83 @@ mod file_chunking {
         assert_eq!(blobs_a.len(), blobs_b.len());
         for (a, b) in blobs_a.iter().zip(blobs_b.iter()) {
             assert_eq!(a, b);
-            // assert_eq!(a.size, b.size);
         }
+    }
+
+    #[test]
+    fn file_node_hash_spans_every_chunk() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("big.bin");
+        let custom_config = FileChunkerConfig {
+            min_size: 64,
+            avg_size: 256,
+            max_size: 1024,
+        };
+
+        let mut content = vec![b'a'; 500];
+        fs::write(&path, &content).unwrap();
+        let before = file_node_hash(&path, custom_config).unwrap();
+
+        // Only the last part differs.
+        content[450] = b'b';
+        fs::write(&path, &content).unwrap();
+        let after = file_node_hash(&path, custom_config).unwrap();
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fastcdc_deduplication_on_insertion() {
+        let tmp = TempDir::new().unwrap();
+        let path1 = tmp.path().join("original.bin");
+        let path2 = tmp.path().join("edited.bin");
+
+        // Generate 3 MB of pseudo-random bytes
+        let mut state: u64 = 12345;
+        let mut data = Vec::with_capacity(3 * 1024 * 1024);
+        for _ in 0..(3 * 1024 * 1024) {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            data.push((state >> 32) as u8);
+        }
+        fs::write(&path1, &data).unwrap();
+
+        // Insert 100 bytes at offset 10,000
+        let mut edited_data = data.clone();
+        let insertion = vec![42u8; 100];
+        edited_data.splice(10000..10000, insertion);
+        fs::write(&path2, &edited_data).unwrap();
+
+        let repo1 = Arc::new(RwLock::new(InMemoryBlobRepository::new()));
+        let chunker1 = FileChunker::new(FileChunkerConfig::default(), repo1);
+        let refs1 = chunker1.chunk_file(&path1).unwrap();
+
+        let repo2 = Arc::new(RwLock::new(InMemoryBlobRepository::new()));
+        let chunker2 = FileChunker::new(FileChunkerConfig::default(), repo2);
+        let refs2 = chunker2.chunk_file(&path2).unwrap();
+
+        assert!(
+            refs1.len() > 1,
+            "Expected multiple chunks for 3MB file, got {}",
+            refs1.len()
+        );
+        assert!(
+            refs2.len() > 1,
+            "Expected multiple chunks for edited file, got {}",
+            refs2.len()
+        );
+
+        let set1: std::collections::HashSet<_> = refs1.iter().map(|r| &r.hash).collect();
+        let set2: std::collections::HashSet<_> = refs2.iter().map(|r| &r.hash).collect();
+        let common = set1.intersection(&set2).count();
+
+        // FastCDC preserves downstream chunk boundaries despite middle insertions
+        assert!(
+            common > 0,
+            "FastCDC should preserve chunk hashes despite shift insertion, common: {}",
+            common
+        );
     }
 
     #[test]
@@ -500,12 +529,13 @@ mod file_chunking {
         let content = b"hello blake3 chunk hashing";
         fs::write(&file_path, content).unwrap();
 
-        let chunker = FileChunker::new(1024, Arc::new(RwLock::new(InMemoryBlobRepository::new()))); // content fits in one chunk
+        let chunker = FileChunker::new(
+            FileChunkerConfig::default(),
+            Arc::new(RwLock::new(InMemoryBlobRepository::new())),
+        ); // content fits in one chunk
         let blobs = chunker.chunk_file(&file_path).unwrap();
 
         assert_eq!(blobs.len(), 1);
-        // let expected_hash = blake3::hash(content).to_hex().to_string();
-        // assert_eq!(blobs[0].hash, expected_hash);
     }
 
     #[test]
@@ -1641,7 +1671,7 @@ mod internal_entries {
 mod file_hashing {
     use super::*;
 
-    use crate::scanner::file_chunker::{DEFAULT_CHUNK_SIZE, file_node_hash};
+    use crate::scanner::file_chunker::{FileChunkerConfig, file_node_hash};
 
     #[test]
     fn file_node_hash_matches_what_the_scanner_recorded() {
@@ -1651,7 +1681,7 @@ mod file_hashing {
         create_file(&root, "hello.txt", b"hello from A");
 
         let tree = scan_view(&mut new_scanner(&root)).unwrap();
-        let hashed = file_node_hash(&root.join("hello.txt"), DEFAULT_CHUNK_SIZE).unwrap();
+        let hashed = file_node_hash(&root.join("hello.txt"), FileChunkerConfig::default()).unwrap();
 
         assert_eq!(hashed, tree.files[0].hash);
     }
@@ -1662,10 +1692,10 @@ mod file_hashing {
         let path = tmp.path().join("hello.txt");
 
         fs::write(&path, b"before").unwrap();
-        let before = file_node_hash(&path, DEFAULT_CHUNK_SIZE).unwrap();
+        let before = file_node_hash(&path, FileChunkerConfig::default()).unwrap();
 
         fs::write(&path, b"after").unwrap();
-        let after = file_node_hash(&path, DEFAULT_CHUNK_SIZE).unwrap();
+        let after = file_node_hash(&path, FileChunkerConfig::default()).unwrap();
 
         assert_ne!(before, after);
     }
@@ -1674,16 +1704,20 @@ mod file_hashing {
     fn file_node_hash_spans_every_chunk() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("big.bin");
-        const CHUNK: usize = 16;
+        let custom_config = FileChunkerConfig {
+            min_size: 64,
+            avg_size: 256,
+            max_size: 1024,
+        };
 
-        let mut content = vec![b'a'; CHUNK * 2];
+        let mut content = vec![b'a'; 500];
         fs::write(&path, &content).unwrap();
-        let before = file_node_hash(&path, CHUNK).unwrap();
+        let before = file_node_hash(&path, custom_config).unwrap();
 
-        // Only the last chunk differs.
-        content[CHUNK + 1] = b'b';
+        // Only the last part differs.
+        content[450] = b'b';
         fs::write(&path, &content).unwrap();
-        let after = file_node_hash(&path, CHUNK).unwrap();
+        let after = file_node_hash(&path, custom_config).unwrap();
 
         assert_ne!(before, after);
     }

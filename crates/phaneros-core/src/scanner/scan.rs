@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::blob_repository::InMemoryBlobRepository;
 use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository};
-use crate::scanner::file_chunker::{DEFAULT_CHUNK_SIZE, FileChunker, FileChunkerError};
+use crate::scanner::file_chunker::{FileChunker, FileChunkerConfig, FileChunkerError};
 use crate::scanner::ignore::IgnoreFilter;
 use crate::utils::observer::Publisher;
 
@@ -184,7 +184,7 @@ impl Scanner {
             status: ScannerStatus::Idle,
             publisher: Publisher::new(),
             file_chunker: FileChunker::new(
-                DEFAULT_CHUNK_SIZE,
+                FileChunkerConfig::default(),
                 Arc::new(RwLock::new(InMemoryBlobRepository::new())),
             ),
             snapshot_buffer_size: 10,
