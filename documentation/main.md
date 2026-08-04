@@ -51,3 +51,34 @@ Deleting history is two separate operations. First, version records are pruned a
 The control plane will expose a REST API that the client will use to communicate with the store. The API will be secured with JWT tokens and will require authentication for all requests. The concrete endpoints, wire formats, and status code semantics are specified in [sync-protocol.md](sync-protocol.md).
 
 From store to client communication we now use SSE on `GET /api/drives/{driveId}/events`, backed by the SQLite `versions` table as a durable outbox. Each accepted root flip appends one `versions` row and emits a `root-changed` event (`id = versions.id`). The client treats this as a wakeup signal and runs the normal reconcile flow (`GET /root` + merge/push/pull rules), rather than trusting SSE payloads as authoritative sync state.
+
+### Telemetry & Sync Insights
+
+Phaneros includes built-in telemetry tracking to measure sync performance, payload compression ratios, bandwidth throughput, deduplication savings, and phase timings (scanning, diffing, payload upload, materialization).
+
+Telemetry data is persisted locally to an SQLite database located at `~/.config/phaneros/metrics.db` (or `~/Library/Application Support/phaneros/metrics.db` on macOS).
+
+#### Viewing Telemetry
+You can query telemetry insights using the CLI:
+```bash
+# Print summary statistics table
+phaneros stats
+
+# Output statistics as JSON
+phaneros stats --json
+
+# Filter stats by drive ID
+phaneros stats --drive-id my_drive
+```
+
+#### Enabling Telemetry (Privacy-First Opt-In)
+Telemetry collection is disabled by default (`false`) to ensure zero local metrics storage out of the box for a privacy-focused experience. To opt into local telemetry insights, set `enable_telemetry = true` in your `config.toml` file under the `[daemon]` section:
+
+```toml
+[daemon]
+store_url = "http://localhost:8080"
+log_level = "info"
+max_concurrent_uploads = 4
+compression = "zstd"
+enable_telemetry = true  # Set to true to opt into local telemetry metrics recording
+```

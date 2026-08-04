@@ -54,6 +54,13 @@ pub struct DaemonSettings {
 
     #[serde(default = "default_compression")]
     pub compression: String,
+
+    #[serde(default = "default_false")]
+    pub enable_telemetry: bool,
+}
+
+fn default_false() -> bool {
+    false
 }
 
 fn default_store_url() -> String {
@@ -80,6 +87,7 @@ impl Default for DaemonSettings {
             ipc_socket: None,
             max_concurrent_uploads: default_max_concurrent_uploads(),
             compression: default_compression(),
+            enable_telemetry: false,
         }
     }
 }

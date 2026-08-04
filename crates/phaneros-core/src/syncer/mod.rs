@@ -130,6 +130,7 @@ pub struct Syncer {
     /// When set, the local store state is dumped to a text file in this
     /// directory after every reconcile (debug tooling, off by default).
     store_dump_dir: Option<std::path::PathBuf>,
+    pub enable_telemetry: bool,
 }
 
 impl Syncer {
@@ -160,7 +161,13 @@ impl Syncer {
                 is_dirty: false,
             },
             store_dump_dir: None,
+            enable_telemetry: false,
         }
+    }
+
+    pub fn with_telemetry(mut self, enabled: bool) -> Self {
+        self.enable_telemetry = enabled;
+        self
     }
 
     /// Enables dumping the local store state to `dir/local_store_dump.txt`
@@ -233,15 +240,17 @@ impl Syncer {
 
         let summary = tracker.finalize();
         // TODO: this is a bit of a hack to avoid making the syncer async; we just spin up a temporary runtime to persist the metrics summary.
-        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            let _ = rt.block_on(async {
-                if let Ok(db) = crate::telemetry::MetricsDatabase::connect_default().await {
-                    let _ = db.insert_summary(&summary).await;
-                }
-            });
+        if self.enable_telemetry {
+            if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                let _ = rt.block_on(async {
+                    if let Ok(db) = crate::telemetry::MetricsDatabase::connect_default().await {
+                        let _ = db.insert_summary(&summary).await;
+                    }
+                });
+            }
         }
 
         println!(

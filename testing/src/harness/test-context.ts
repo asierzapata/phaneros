@@ -51,6 +51,7 @@ export class TestHarness {
 [daemon]
 store_url = "${storeUrl}"
 log_level = "info"
+enable_telemetry = true
 
 [drives.smoke_drive]
 path = "${vaultA}"

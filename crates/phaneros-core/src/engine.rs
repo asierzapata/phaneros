@@ -15,6 +15,7 @@ pub struct EngineConfig {
     pub drive_id: String,
     pub token: String,
     pub dump_store: Option<PathBuf>,
+    pub enable_telemetry: bool,
 }
 
 impl EngineConfig {
@@ -31,7 +32,13 @@ impl EngineConfig {
             drive_id,
             token,
             dump_store,
+            enable_telemetry: false,
         }
+    }
+
+    pub fn with_telemetry(mut self, enabled: bool) -> Self {
+        self.enable_telemetry = enabled;
+        self
     }
 }
 
@@ -124,7 +131,8 @@ impl SyncEngine {
             remote_blob_repository,
             drive_session,
             rescan,
-        );
+        )
+        .with_telemetry(self.config.enable_telemetry);
 
         drop(sync_trigger_tx);
 

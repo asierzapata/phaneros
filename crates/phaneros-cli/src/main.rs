@@ -116,7 +116,8 @@ fn main() {
         cli.drive_id,
         token,
         cli.dump_store,
-    );
+    )
+    .with_telemetry(config.daemon.enable_telemetry);
 
     let engine = SyncEngine::new(engine_config);
     if let Err(err) = engine.run() {
