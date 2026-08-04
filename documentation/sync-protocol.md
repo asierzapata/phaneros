@@ -30,12 +30,17 @@ All endpoints are mounted under `/api`.
 | PUT    | `/api/drives/{driveId}/root`         | JSON          | 204                                                  | 409 (Compare-And-Swap mismatch) |
 | GET    | `/api/drives/{driveId}/nodes/{hash}` | –             | 200, JSON node                                       | 404                             |
 | PUT    | `/api/drives/{driveId}/nodes/{hash}` | JSON node     | 204                                                  | –                               |
+| POST   | `/api/drives/{driveId}/nodes/missing` | JSON          | 200, JSON                                            | –                               |
+| POST   | `/api/drives/{driveId}/nodes/batch`   | JSON          | 200, JSON                                            | –                               |
+| POST   | `/api/blobs/missing`                 | JSON          | 200, JSON                                            | –                               |
 | HEAD   | `/api/blobs/{hash}`                  | –             | 200                                                  | 404                             |
 | POST   | `/api/blobs/{hash}/upload`           | JSON `{size}` | 200, JSON ticket (204 if the blob is already stored) | –                               |
 | PUT    | `/api/blobs/{hash}/bytes`            | raw bytes     | 204                                                  | –                               |
 | POST   | `/api/blobs/{hash}/commit`           | –             | 204                                                  | 404 (no ticket for this hash)   |
 | POST   | `/api/blobs/{hash}/download`         | –             | 200, JSON ticket                                     | 404                             |
 | GET    | `/api/blobs/{hash}/bytes`            | –             | 200, raw bytes                                       | 404                             |
+
+The three batch endpoints above use POST pending axum support for the HTTP QUERY method (RFC 10008, tracking: tokio-rs/axum#3801). They will migrate to QUERY once support lands.
 
 Route segments (`drives`, `nodes`, `blobs`) stay plural to match REST convention. The store's router modules are named singular (`drive`, `node`, `blob`) since each module handles one resource type, not a collection of route segments.
 
@@ -106,6 +111,39 @@ The client must treat `url` as opaque. In v0 the store mints URLs pointing at it
 
 `HEAD /api/blobs/{hash}` stays on the control plane since its a reponse about metadata, not the bytes themselves.
 
+### Batch negotiation
+
+Three endpoints reduce the O(N) per-hash round trips of `compute_diff` to O(depth) batched calls:
+
+**Nodes missing** — `POST /api/drives/{driveId}/nodes/missing`:
+
+```json
+// Request
+{ "hashes": ["abc...", "def..."] }
+// Response
+{ "missing": ["abc..."] }
+```
+
+**Nodes batch fetch** — `POST /api/drives/{driveId}/nodes/batch`:
+
+```json
+// Request
+{ "hashes": ["abc...", "def..."] }
+// Response
+{ "nodes": { "abc...": { "type": "folder", ... } } }
+```
+
+**Blobs missing** — `POST /api/blobs/missing`:
+
+```json
+// Request
+{ "hashes": ["abc...", "def..."] }
+// Response
+{ "missing": ["abc..."] }
+```
+
+All three accept at most 10,000 hashes per request (413 otherwise). Empty input returns an empty result. These endpoints are idempotent and safe.
+
 ### Encryption readiness
 
 E2EE is a later addition, but the protocol accepts it as of now, because the store treats content as opaque and only ever interprets the hash graph:
@@ -166,7 +204,7 @@ The write ordering the client must follow is very important to maintain the stor
 
 ## Deferred (known, intentionally not in v0)
 
-- **Batch negotiation**: `compute_diff` probes one hash per request, which means N round trips. The fix is a `POST .../missing` endpoint taking a hash list and returning the subset the store lacks, one per scope (`/api/drives/{driveId}/nodes/missing` and `/api/blobs/missing`).
+- **~~Batch negotiation~~** (implemented): `compute_diff` now uses `POST .../nodes/missing`, `POST .../blobs/missing`, and `POST .../nodes/batch` to reduce round trips from O(N) to O(depth).
 - **Auth**: JWT in the `Authorization` header, per main.md.
 - **E2EE**: passphrase-derived keys in the client/daemon, encrypting blob bytes and node names.
 - **External data plane**: the ticket flow is already in the protocol, so what is deferred is the store minting URLs that point somewhere else (presigned S3/R2) and enforcing `expires_at`. v0 serves the bytes itself.

@@ -35,6 +35,22 @@ impl NodeService {
         self.repository.get_node(drive_id, hash).await
     }
 
+    pub async fn get_missing_nodes(
+        &self,
+        drive_id: &str,
+        hashes: &[Hash],
+    ) -> Result<Vec<Hash>, NodeRepositoryError> {
+        self.repository.get_missing_nodes(drive_id, hashes).await
+    }
+
+    pub async fn get_nodes_batch(
+        &self,
+        drive_id: &str,
+        hashes: &[Hash],
+    ) -> Result<std::collections::HashMap<Hash, Node>, NodeRepositoryError> {
+        self.repository.get_nodes_batch(drive_id, hashes).await
+    }
+
     pub async fn put_node(
         &self,
         drive_id: &str,

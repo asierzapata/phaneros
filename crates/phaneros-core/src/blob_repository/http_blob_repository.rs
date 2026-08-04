@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::HashSet;
 
 use crate::blob_repository::{
     Blob, BlobRepository, Hash, WritableBlobRepository, repository::BlobRepositoryError,
@@ -22,6 +23,11 @@ pub struct HttpBlobRepository {
 #[derive(Deserialize)]
 struct TicketResponse {
     url: String,
+}
+
+#[derive(Deserialize)]
+struct MissingResponse {
+    missing: HashSet<Hash>,
 }
 
 impl HttpBlobRepository {
@@ -285,6 +291,32 @@ impl BlobRepository for HttpBlobRepository {
                 Err(BlobRepositoryError::ExistenceCheckFailed(hash.clone()))
             }
         }
+    }
+
+    fn get_missing(&self, hashes: &[Hash]) -> Result<HashSet<Hash>, BlobRepositoryError> {
+        if hashes.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let url = format!("{}/api/blobs/missing", self.base_url);
+        let payload = serde_json::json!({ "hashes": hashes });
+
+        let response = self
+            .agent
+            .post(&url)
+            .set("Authorization", &self.auth)
+            .send_json(payload)
+            .map_err(|e| {
+                eprintln!("[http-blob] get_missing err={:?}", e);
+                BlobRepositoryError::ExistenceCheckFailed(hashes[0].clone())
+            })?;
+
+        let body: MissingResponse = response.into_json().map_err(|e| {
+            eprintln!("[http-blob] get_missing parse err={:?}", e);
+            BlobRepositoryError::ExistenceCheckFailed(hashes[0].clone())
+        })?;
+
+        Ok(body.missing)
     }
 }
 

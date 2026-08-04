@@ -504,7 +504,7 @@ fn queue_local_subtree_for_remote(
     remote_blob_repository: &impl BlobRepository,
     plan: &mut MergePlan,
 ) -> Result<(), SyncError> {
-    let (nodes, blobs) = compute_unidirectional_diff(
+    let (nodes, blobs, _node_cache) = compute_unidirectional_diff(
         local_node_repository,
         remote_node_repository,
         remote_blob_repository,
@@ -522,7 +522,7 @@ fn queue_remote_subtree_for_local(
     local_blob_repository: &impl BlobRepository,
     plan: &mut MergePlan,
 ) -> Result<(), SyncError> {
-    let (nodes, blobs) = compute_unidirectional_diff(
+    let (nodes, blobs, _node_cache) = compute_unidirectional_diff(
         remote_node_repository,
         local_node_repository,
         local_blob_repository,

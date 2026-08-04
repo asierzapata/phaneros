@@ -13,7 +13,7 @@ fn identical_stores_produce_empty_diff() {
     let r_file = remote.add_file("a.txt", b"content");
     remote.add_folder("root", vec![], vec![r_file]);
 
-    let (node_diff, blob_diff) =
+    let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
             .unwrap();
 
@@ -31,7 +31,7 @@ fn empty_target_needs_every_node_and_blob() {
 
     let remote = TestStore::new();
 
-    let (node_diff, blob_diff) =
+    let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
             .unwrap();
 
@@ -63,7 +63,7 @@ fn changed_file_sends_only_the_path_to_root() {
     let photos = local.add_folder("photos", vec![], vec![cat]);
     let root = local.add_folder("root", vec![docs.clone(), photos], vec![]);
 
-    let (node_diff, blob_diff) =
+    let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
             .unwrap();
 
@@ -92,7 +92,7 @@ fn rename_sends_only_ancestor_folders_never_the_file() {
     let docs = local.add_folder("docs", vec![], vec![renamed.clone()]);
     let root = local.add_folder("root", vec![docs.clone()], vec![]);
 
-    let (node_diff, blob_diff) =
+    let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
             .unwrap();
 
@@ -119,7 +119,7 @@ fn duplicated_content_is_transferred_once() {
 
     let remote = TestStore::new();
 
-    let (node_diff, blob_diff) =
+    let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
             .unwrap();
 
@@ -153,7 +153,7 @@ fn duplicated_folder_is_transferred_once() {
     let remote = TestStore::new();
 
     let recording_local = RecordingStore::new(&local.nodes);
-    let (node_diff, _blob_diff) =
+    let (node_diff, _blob_diff, _) =
         compute_unidirectional_diff(&recording_local, &remote.nodes, &remote.blobs, &root.hash)
             .unwrap();
 
@@ -190,7 +190,7 @@ fn shared_subtrees_are_pruned_not_walked() {
     let root = local.add_folder("root", vec![photos], vec![new_file]);
 
     let recording_local = RecordingStore::new(&local.nodes);
-    let (node_diff, _blob_diff) =
+    let (node_diff, _blob_diff, _) =
         compute_unidirectional_diff(&recording_local, &remote.nodes, &remote.blobs, &root.hash)
             .unwrap();
 
@@ -217,8 +217,8 @@ fn bidirectional_diff_reports_each_direction_independently() {
     let r_root = remote.add_folder("root", vec![], vec![r_file.clone()]);
 
     let (
-        (local_to_remote_nodes, local_to_remote_blobs),
-        (remote_to_local_nodes, remote_to_local_blobs),
+        (local_to_remote_nodes, local_to_remote_blobs, _),
+        (remote_to_local_nodes, remote_to_local_blobs, _),
     ) = compute_bidirectional_diff(
         &local.nodes,
         &local.blobs,

@@ -136,6 +136,10 @@ impl BlobService {
     ) -> Result<Option<super::metadata_repository::BlobMetadataInfo>, BlobServiceError> {
         Ok(self.metadata_repository.get_metadata(hash).await?)
     }
+
+    pub async fn get_missing(&self, hashes: &[Hash]) -> Result<Vec<Hash>, BlobServiceError> {
+        Ok(self.metadata_repository.get_missing(hashes).await?)
+    }
 }
 
 #[cfg(test)]

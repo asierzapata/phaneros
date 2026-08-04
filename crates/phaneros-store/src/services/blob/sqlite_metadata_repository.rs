@@ -101,6 +101,32 @@ impl BlobMetadataRepository for SqliteBlobMetadataRepository {
             .await?;
         Ok(())
     }
+
+    async fn get_missing(&self, hashes: &[Hash]) -> Result<Vec<Hash>, BlobMetadataRepositoryError> {
+        if hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = hashes.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT hash FROM blob_metadata WHERE hash IN ({}) AND committed_at IS NOT NULL",
+            placeholders
+        );
+
+        let mut query = sqlx::query_scalar::<_, String>(&sql);
+        for hash in hashes {
+            query = query.bind(hash.as_str());
+        }
+
+        let found: Vec<String> = query.fetch_all(&self.pool).await?;
+        let found_set: std::collections::HashSet<_> = found.into_iter().collect();
+
+        Ok(hashes
+            .iter()
+            .filter(|h| !found_set.contains(h.as_str()))
+            .cloned()
+            .collect())
+    }
 }
 
 #[cfg(test)]
@@ -146,5 +172,28 @@ mod tests {
     async fn declared_size_is_none_for_unknown_blob() {
         let repo = repo().await;
         assert_eq!(repo.declared_size(&"missing".into()).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn get_missing_returns_only_absent_or_uncommitted_blobs() {
+        let repo = repo().await;
+        let hash1: Hash = "hash1".into();
+        let hash2: Hash = "hash2".into();
+        let hash3: Hash = "hash3".into();
+
+        // hash1 is declared and committed (should not be missing)
+        repo.declare(&hash1, 10, None, None).await.unwrap();
+        repo.mark_committed(&hash1).await.unwrap();
+
+        // hash2 is only declared, not committed (should be missing)
+        repo.declare(&hash2, 10, None, None).await.unwrap();
+
+        // hash3 is not even declared (should be missing)
+        
+        let missing = repo.get_missing(&[hash1.clone(), hash2.clone(), hash3.clone()]).await.unwrap();
+
+        assert_eq!(missing.len(), 2);
+        assert!(missing.contains(&hash2));
+        assert!(missing.contains(&hash3));
     }
 }

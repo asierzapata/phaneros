@@ -55,6 +55,18 @@ pub trait NodeRepository {
         node: Node,
     ) -> Result<(), NodeRepositoryError>;
 
+    async fn get_missing_nodes(
+        &self,
+        drive_id: &str,
+        hashes: &[Hash],
+    ) -> Result<Vec<Hash>, NodeRepositoryError>;
+
+    async fn get_nodes_batch(
+        &self,
+        drive_id: &str,
+        hashes: &[Hash],
+    ) -> Result<std::collections::HashMap<Hash, Node>, NodeRepositoryError>;
+
     async fn list_versions(&self, drive_id: &str) -> Result<Vec<Version>, NodeRepositoryError>;
 
     async fn max_version_id(&self) -> Result<i64, NodeRepositoryError>;
