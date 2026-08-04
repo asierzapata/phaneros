@@ -94,6 +94,19 @@ impl BlobService {
         Ok(())
     }
 
+    pub async fn put_bytes_direct(&self, hash: &Hash, bytes: Bytes) -> Result<(), BlobServiceError> {
+        if self.metadata_repository.exists(hash).await? {
+            return Ok(());
+        }
+        let size = bytes.len() as i64;
+        self.metadata_repository
+            .declare(hash, size, None, None)
+            .await?;
+        self.bytes_repository.put_bytes(hash, bytes).await?;
+        self.metadata_repository.mark_committed(hash).await?;
+        Ok(())
+    }
+
     pub async fn confirm_upload(&self, hash: &Hash) -> Result<(), BlobServiceError> {
         if self
             .metadata_repository

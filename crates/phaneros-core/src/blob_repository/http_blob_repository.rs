@@ -9,7 +9,6 @@ use crate::blob_repository::{
 #[derive(Deserialize)]
 pub struct HttpBlobRepository {
     base_url: String,
-    drive_id: String,
     auth: String,
     #[serde(skip)]
     #[serde(default = "reqwest::Client::new")]
@@ -26,10 +25,9 @@ struct MissingResponse {
 }
 
 impl HttpBlobRepository {
-    pub fn new(base_url: String, drive_id: String, token: String) -> Self {
+    pub fn new(base_url: String, _drive_id: String, token: String) -> Self {
         Self {
             base_url,
-            drive_id,
             auth: format!("Bearer {}", token),
             client: reqwest::Client::new(),
             inserted: std::sync::atomic::AtomicUsize::new(0),
@@ -41,10 +39,7 @@ impl HttpBlobRepository {
 #[async_trait]
 impl BlobRepository for HttpBlobRepository {
     async fn get_blob(&self, hash: &Hash) -> Result<Option<Blob>, BlobRepositoryError> {
-        let url = format!(
-            "{}/api/drives/{}/blobs/{}",
-            self.base_url, self.drive_id, hash
-        );
+        let url = format!("{}/api/blobs/{}", self.base_url, hash);
 
         let resp = self
             .client
@@ -72,10 +67,7 @@ impl BlobRepository for HttpBlobRepository {
     }
 
     async fn contains(&self, hash: &Hash) -> Result<bool, BlobRepositoryError> {
-        let url = format!(
-            "{}/api/drives/{}/blobs/{}",
-            self.base_url, self.drive_id, hash
-        );
+        let url = format!("{}/api/blobs/{}", self.base_url, hash);
 
         let resp = self
             .client
@@ -106,10 +98,7 @@ impl BlobRepository for HttpBlobRepository {
             }
         }
 
-        let url = format!(
-            "{}/api/drives/{}/blobs/missing",
-            self.base_url, self.drive_id
-        );
+        let url = format!("{}/api/blobs/missing", self.base_url);
         let payload = serde_json::json!({ "hashes": hashes });
 
         let resp = self
@@ -145,10 +134,8 @@ impl BlobRepository for HttpBlobRepository {
 #[async_trait]
 impl WritableBlobRepository for HttpBlobRepository {
     async fn insert(&self, hash: Hash, blob: Blob) -> Result<(), BlobRepositoryError> {
-        let url = format!(
-            "{}/api/drives/{}/blobs/{}",
-            self.base_url, self.drive_id, hash
-        );
+        let url = format!("{}/api/blobs/{}", self.base_url, hash);
+        let raw_len = blob.bytes.len() as u64;
 
         let resp = self
             .client
@@ -164,6 +151,9 @@ impl WritableBlobRepository for HttpBlobRepository {
             })?;
 
         if resp.status().is_success() {
+            if let Some(ref tracker) = *self.tracker.read().unwrap() {
+                tracker.record_blob_compressed(raw_len, raw_len, false);
+            }
             Ok(())
         } else if resp.status() == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
             Err(BlobRepositoryError::UploadRejected {
