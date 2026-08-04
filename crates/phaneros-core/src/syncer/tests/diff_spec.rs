@@ -2,37 +2,39 @@ use crate::syncer::diff::{compute_bidirectional_diff, compute_unidirectional_dif
 
 use super::fixtures::{RecordingStore, TestStore};
 
-#[test]
-fn identical_stores_produce_empty_diff() {
+#[tokio::test]
+async fn identical_stores_produce_empty_diff() {
     let mut local = TestStore::new();
-    let file = local.add_file("a.txt", b"content");
-    let root = local.add_folder("root", vec![], vec![file]);
+    let file = local.add_file("a.txt", b"content").await;
+    let root = local.add_folder("root", vec![], vec![file]).await;
 
     // Remote has the exact same nodes.
     let mut remote = TestStore::new();
-    let r_file = remote.add_file("a.txt", b"content");
-    remote.add_folder("root", vec![], vec![r_file]);
+    let r_file = remote.add_file("a.txt", b"content").await;
+    remote.add_folder("root", vec![], vec![r_file]).await;
 
     let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
+            .await
             .unwrap();
 
     assert!(node_diff.is_empty());
     assert!(blob_diff.is_empty());
 }
 
-#[test]
-fn empty_target_needs_every_node_and_blob() {
+#[tokio::test]
+async fn empty_target_needs_every_node_and_blob() {
     let mut local = TestStore::new();
-    let file_a = local.add_file("a.txt", b"aaa");
-    let file_b = local.add_file("b.txt", b"bbb");
-    let sub = local.add_folder("sub", vec![], vec![file_b.clone()]);
-    let root = local.add_folder("root", vec![sub.clone()], vec![file_a.clone()]);
+    let file_a = local.add_file("a.txt", b"aaa").await;
+    let file_b = local.add_file("b.txt", b"bbb").await;
+    let sub = local.add_folder("sub", vec![], vec![file_b.clone()]).await;
+    let root = local.add_folder("root", vec![sub.clone()], vec![file_a.clone()]).await;
 
     let remote = TestStore::new();
 
     let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
+            .await
             .unwrap();
 
     // 4 distinct nodes: file_a, file_b, sub, root.
@@ -45,26 +47,27 @@ fn empty_target_needs_every_node_and_blob() {
     assert_eq!(blob_diff.len(), 2);
 }
 
-#[test]
-fn changed_file_sends_only_the_path_to_root() {
+#[tokio::test]
+async fn changed_file_sends_only_the_path_to_root() {
     // Remote holds version 1: root -> [docs(one.txt), photos(cat.jpg)]
     let mut remote = TestStore::new();
-    let r_one = remote.add_file("one.txt", b"v1");
-    let r_cat = remote.add_file("cat.jpg", b"cat-bytes");
-    let r_docs = remote.add_folder("docs", vec![], vec![r_one]);
-    let r_photos = remote.add_folder("photos", vec![], vec![r_cat]);
-    remote.add_folder("root", vec![r_docs, r_photos], vec![]);
+    let r_one = remote.add_file("one.txt", b"v1").await;
+    let r_cat = remote.add_file("cat.jpg", b"cat-bytes").await;
+    let r_docs = remote.add_folder("docs", vec![], vec![r_one]).await;
+    let r_photos = remote.add_folder("photos", vec![], vec![r_cat]).await;
+    remote.add_folder("root", vec![r_docs, r_photos], vec![]).await;
 
     // Local is version 2: only one.txt changed.
     let mut local = TestStore::new();
-    let one_v2 = local.add_file("one.txt", b"v2");
-    let cat = local.add_file("cat.jpg", b"cat-bytes");
-    let docs = local.add_folder("docs", vec![], vec![one_v2.clone()]);
-    let photos = local.add_folder("photos", vec![], vec![cat]);
-    let root = local.add_folder("root", vec![docs.clone(), photos], vec![]);
+    let one_v2 = local.add_file("one.txt", b"v2").await;
+    let cat = local.add_file("cat.jpg", b"cat-bytes").await;
+    let docs = local.add_folder("docs", vec![], vec![one_v2.clone()]).await;
+    let photos = local.add_folder("photos", vec![], vec![cat]).await;
+    let root = local.add_folder("root", vec![docs.clone(), photos], vec![]).await;
 
     let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
+            .await
             .unwrap();
 
     // O(depth): new file node, new docs node, new root. Nothing from
@@ -78,22 +81,23 @@ fn changed_file_sends_only_the_path_to_root() {
     assert_eq!(blob_diff.len(), 1);
 }
 
-#[test]
-fn rename_sends_only_ancestor_folders_never_the_file() {
+#[tokio::test]
+async fn rename_sends_only_ancestor_folders_never_the_file() {
     // Remote: root -> docs -> original.txt
     let mut remote = TestStore::new();
-    let r_file = remote.add_file("original.txt", b"same bytes");
-    let r_docs = remote.add_folder("docs", vec![], vec![r_file]);
-    remote.add_folder("root", vec![r_docs], vec![]);
+    let r_file = remote.add_file("original.txt", b"same bytes").await;
+    let r_docs = remote.add_folder("docs", vec![], vec![r_file]).await;
+    remote.add_folder("root", vec![r_docs], vec![]).await;
 
     // Local: same content, file renamed.
     let mut local = TestStore::new();
-    let renamed = local.add_file("renamed.txt", b"same bytes");
-    let docs = local.add_folder("docs", vec![], vec![renamed.clone()]);
-    let root = local.add_folder("root", vec![docs.clone()], vec![]);
+    let renamed = local.add_file("renamed.txt", b"same bytes").await;
+    let docs = local.add_folder("docs", vec![], vec![renamed.clone()]).await;
+    let root = local.add_folder("root", vec![docs.clone()], vec![]).await;
 
     let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
+            .await
             .unwrap();
 
     // The file's content hash is unchanged, so the remote already has the
@@ -105,22 +109,23 @@ fn rename_sends_only_ancestor_folders_never_the_file() {
     assert!(blob_diff.is_empty());
 }
 
-#[test]
-fn duplicated_content_is_transferred_once() {
+#[tokio::test]
+async fn duplicated_content_is_transferred_once() {
     // Two identical files under different folders -> one file node hash.
     let mut local = TestStore::new();
-    let copy_a = local.add_file("copy_a.txt", b"identical");
-    let copy_b = local.add_file("copy_b.txt", b"identical");
+    let copy_a = local.add_file("copy_a.txt", b"identical").await;
+    let copy_b = local.add_file("copy_b.txt", b"identical").await;
     assert_eq!(copy_a.hash, copy_b.hash);
 
-    let dir_a = local.add_folder("dir_a", vec![], vec![copy_a.clone()]);
-    let dir_b = local.add_folder("dir_b", vec![], vec![copy_b]);
-    let root = local.add_folder("root", vec![dir_a, dir_b], vec![]);
+    let dir_a = local.add_folder("dir_a", vec![], vec![copy_a.clone()]).await;
+    let dir_b = local.add_folder("dir_b", vec![], vec![copy_b]).await;
+    let root = local.add_folder("root", vec![dir_a, dir_b], vec![]).await;
 
     let remote = TestStore::new();
 
     let (node_diff, blob_diff, _) =
         compute_unidirectional_diff(&local.nodes, &remote.nodes, &remote.blobs, &root.hash)
+            .await
             .unwrap();
 
     // root + dir_a + dir_b + ONE shared file node = 4, and no duplicates.
@@ -130,14 +135,14 @@ fn duplicated_content_is_transferred_once() {
     assert_eq!(blob_diff.len(), 1);
 }
 
-#[test]
-fn duplicated_folder_is_transferred_once() {
+#[tokio::test]
+async fn duplicated_folder_is_transferred_once() {
     // Two backups holding an identical `photos` subtree -> one folder node.
     let mut local = TestStore::new();
-    let cat = local.add_file("cat.jpg", b"cat-bytes");
+    let cat = local.add_file("cat.jpg", b"cat-bytes").await;
     let cat_hash = cat.hash.clone();
-    let photos_2023 = local.add_folder("photos", vec![], vec![cat.clone()]);
-    let photos_2024 = local.add_folder("photos", vec![], vec![cat]);
+    let photos_2023 = local.add_folder("photos", vec![], vec![cat.clone()]).await;
+    let photos_2024 = local.add_folder("photos", vec![], vec![cat]).await;
     // Same name + same contents -> same folder hash.
     assert_eq!(photos_2023.hash, photos_2024.hash);
 
@@ -145,16 +150,17 @@ fn duplicated_folder_is_transferred_once() {
     // own name (the name lives in the parent's Entry). Both backups hold a
     // single identical `photos` child, so the two backup folders collapse to
     // ONE node too.
-    let backup_2023 = local.add_folder("backup_2023", vec![photos_2023.clone()], vec![]);
-    let backup_2024 = local.add_folder("backup_2024", vec![photos_2024], vec![]);
+    let backup_2023 = local.add_folder("backup_2023", vec![photos_2023.clone()], vec![]).await;
+    let backup_2024 = local.add_folder("backup_2024", vec![photos_2024], vec![]).await;
     assert_eq!(backup_2023.hash, backup_2024.hash);
-    let root = local.add_folder("root", vec![backup_2023.clone(), backup_2024], vec![]);
+    let root = local.add_folder("root", vec![backup_2023.clone(), backup_2024], vec![]).await;
 
     let remote = TestStore::new();
 
     let recording_local = RecordingStore::new(&local.nodes);
     let (node_diff, _blob_diff, _) =
         compute_unidirectional_diff(&recording_local, &remote.nodes, &remote.blobs, &root.hash)
+            .await
             .unwrap();
 
     // root + ONE shared backup + ONE shared photos + ONE shared cat file = 4.
@@ -164,7 +170,7 @@ fn duplicated_folder_is_transferred_once() {
     // re-walk its subtree. The visited guard short-circuits recursion, so
     // the deepest shared node is fetched from the source exactly once. A
     // weak `is_none()`-only guard would descend twice and fetch it twice.
-    let requested = recording_local.requested.borrow();
+    let requested = recording_local.requested.read().unwrap();
     let photos_walks = requested.iter().filter(|h| **h == photos_2023.hash).count();
     let cat_walks = requested.iter().filter(|h| **h == cat_hash).count();
     assert_eq!(
@@ -174,47 +180,48 @@ fn duplicated_folder_is_transferred_once() {
     assert_eq!(cat_walks, 1, "shared cat file was walked more than once");
 }
 
-#[test]
-fn shared_subtrees_are_pruned_not_walked() {
+#[tokio::test]
+async fn shared_subtrees_are_pruned_not_walked() {
     // Remote already has the photos subtree; the walk must never even
     // *look inside* it — that is the whole point of a merkle diff.
     let mut remote = TestStore::new();
-    let r_cat = remote.add_file("cat.jpg", b"cat-bytes");
-    let r_photos = remote.add_folder("photos", vec![], vec![r_cat]);
-    remote.add_folder("root", vec![r_photos], vec![]);
+    let r_cat = remote.add_file("cat.jpg", b"cat-bytes").await;
+    let r_photos = remote.add_folder("photos", vec![], vec![r_cat]).await;
+    remote.add_folder("root", vec![r_photos], vec![]).await;
 
     let mut local = TestStore::new();
-    let cat = local.add_file("cat.jpg", b"cat-bytes");
-    let photos = local.add_folder("photos", vec![], vec![cat.clone()]);
-    let new_file = local.add_file("new.txt", b"new");
-    let root = local.add_folder("root", vec![photos], vec![new_file]);
+    let cat = local.add_file("cat.jpg", b"cat-bytes").await;
+    let photos = local.add_folder("photos", vec![], vec![cat.clone()]).await;
+    let new_file = local.add_file("new.txt", b"new").await;
+    let root = local.add_folder("root", vec![photos], vec![new_file]).await;
 
     let recording_local = RecordingStore::new(&local.nodes);
     let (node_diff, _blob_diff, _) =
         compute_unidirectional_diff(&recording_local, &remote.nodes, &remote.blobs, &root.hash)
+            .await
             .unwrap();
 
     // Correct transfer set: new root + new file.
     assert_eq!(node_diff.len(), 2);
     // And the file inside the shared photos subtree was never fetched
     // from the source: the walk pruned at the matching folder hash.
-    let requested = recording_local.requested.borrow();
+    let requested = recording_local.requested.read().unwrap();
     assert!(
         !requested.contains(&cat.hash),
         "walk descended into a subtree the target already has"
     );
 }
 
-#[test]
-fn bidirectional_diff_reports_each_direction_independently() {
+#[tokio::test]
+async fn bidirectional_diff_reports_each_direction_independently() {
     // local has local-only file, remote has remote-only file.
     let mut local = TestStore::new();
-    let l_file = local.add_file("local.txt", b"local-only");
-    let l_root = local.add_folder("root", vec![], vec![l_file.clone()]);
+    let l_file = local.add_file("local.txt", b"local-only").await;
+    let l_root = local.add_folder("root", vec![], vec![l_file.clone()]).await;
 
     let mut remote = TestStore::new();
-    let r_file = remote.add_file("remote.txt", b"remote-only");
-    let r_root = remote.add_folder("root", vec![], vec![r_file.clone()]);
+    let r_file = remote.add_file("remote.txt", b"remote-only").await;
+    let r_root = remote.add_folder("root", vec![], vec![r_file.clone()]).await;
 
     let (
         (local_to_remote_nodes, local_to_remote_blobs, _),
@@ -227,6 +234,7 @@ fn bidirectional_diff_reports_each_direction_independently() {
         &remote.blobs,
         &r_root.hash,
     )
+    .await
     .unwrap();
 
     assert!(local_to_remote_nodes.contains(&l_file.hash));

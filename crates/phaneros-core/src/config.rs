@@ -224,8 +224,8 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    #[test]
-    fn test_parse_valid_config_toml() {
+    #[tokio::test]
+    async fn test_parse_valid_config_toml() {
         let toml_str = r#"
 [daemon]
 store_url = "http://my-remote-store:8080"
@@ -276,8 +276,8 @@ enabled = false
         assert!(!work_drive.enabled);
     }
 
-    #[test]
-    fn test_roundtrip_save_and_load() {
+    #[tokio::test]
+    async fn test_roundtrip_save_and_load() {
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("config.toml");
 

@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::sync::RwLock;
+use async_trait::async_trait;
 
 use crate::node_repository::{
     Hash, Node, NodeRepository, WritableNodeRepository, repository::NodeRepositoryError,
@@ -6,8 +8,8 @@ use crate::node_repository::{
 
 #[derive(Debug, Default)]
 pub struct InMemoryNodeRepository {
-    root: Option<Hash>,
-    nodes: HashMap<Hash, Node>,
+    root: RwLock<Option<Hash>>,
+    nodes: RwLock<HashMap<Hash, Node>>,
 }
 
 impl InMemoryNodeRepository {
@@ -15,41 +17,49 @@ impl InMemoryNodeRepository {
         Self::default()
     }
 
-    pub fn insert(&mut self, hash: Hash, node: Node) -> Result<(), NodeRepositoryError> {
-        self.nodes.entry(hash).or_insert(node);
+    pub fn insert_internal(&self, hash: Hash, node: Node) -> Result<(), NodeRepositoryError> {
+        let mut nodes = self.nodes.write().unwrap();
+        nodes.entry(hash).or_insert(node);
         Ok(())
     }
 
-    pub fn set_root(&mut self, hash: Hash) -> Result<(), NodeRepositoryError> {
-        self.root = Some(hash);
+    pub fn set_root_internal(&self, hash: Hash) -> Result<(), NodeRepositoryError> {
+        let mut root = self.root.write().unwrap();
+        *root = Some(hash);
         Ok(())
+    }
+
+    pub fn get_node_internal(&self, hash: &Hash) -> Result<Option<Node>, NodeRepositoryError> {
+        Ok(self.nodes.read().unwrap().get(hash).cloned())
     }
 
     pub fn len(&self) -> usize {
-        self.nodes.len()
+        self.nodes.read().unwrap().len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
+        self.nodes.read().unwrap().is_empty()
     }
 }
 
+#[async_trait]
 impl NodeRepository for InMemoryNodeRepository {
-    fn root_hash(&self) -> Result<Option<&Hash>, NodeRepositoryError> {
-        Ok(self.root.as_ref())
+    async fn root_hash(&self) -> Result<Option<Hash>, NodeRepositoryError> {
+        Ok(self.root.read().unwrap().clone())
     }
 
-    fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeRepositoryError> {
-        Ok(self.nodes.get(hash).cloned())
+    async fn get_node(&self, hash: &Hash) -> Result<Option<Node>, NodeRepositoryError> {
+        Ok(self.nodes.read().unwrap().get(hash).cloned())
     }
 }
 
+#[async_trait]
 impl WritableNodeRepository for InMemoryNodeRepository {
-    fn insert(&mut self, hash: Hash, node: Node) -> Result<(), NodeRepositoryError> {
-        InMemoryNodeRepository::insert(self, hash, node)
+    async fn insert(&self, hash: Hash, node: Node) -> Result<(), NodeRepositoryError> {
+        self.insert_internal(hash, node)
     }
 
-    fn set_root(&mut self, hash: Hash) -> Result<(), NodeRepositoryError> {
-        InMemoryNodeRepository::set_root(self, hash)
+    async fn set_root(&self, hash: Hash) -> Result<(), NodeRepositoryError> {
+        self.set_root_internal(hash)
     }
 }

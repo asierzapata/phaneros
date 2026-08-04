@@ -10,7 +10,7 @@ use crate::{
 
 pub type TransferSet = (HashSet<Hash>, HashSet<Hash>, HashMap<Hash, Node>);
 
-pub fn compute_unidirectional_diff(
+pub async fn compute_unidirectional_diff(
     source_node_repository: &impl NodeRepository,
     target_node_repository: &impl NodeRepository,
     target_blob_repository: &impl BlobRepository,
@@ -21,10 +21,10 @@ pub fn compute_unidirectional_diff(
         target_node_repository,
         target_blob_repository,
         root_hash,
-    )
+    ).await
 }
 
-pub fn compute_bidirectional_diff(
+pub async fn compute_bidirectional_diff(
     source_node_repository: &impl NodeRepository,
     source_blob_repository: &impl BlobRepository,
     source_root_hash: &Hash,
@@ -37,19 +37,19 @@ pub fn compute_bidirectional_diff(
         target_node_repository,
         target_blob_repository,
         source_root_hash,
-    )?;
+    ).await?;
 
     let target_to_source = compute_directional_diff(
         target_node_repository,
         source_node_repository,
         source_blob_repository,
         target_root_hash,
-    )?;
+    ).await?;
 
     Ok((source_to_target, target_to_source))
 }
 
-fn compute_directional_diff(
+async fn compute_directional_diff(
     source_node_repository: &impl NodeRepository,
     target_node_repository: &impl NodeRepository,
     target_blob_repository: &impl BlobRepository,
@@ -64,14 +64,14 @@ fn compute_directional_diff(
 
     while !pending_nodes.is_empty() {
         let batch: Vec<Hash> = pending_nodes.drain(..).collect();
-        let missing = target_node_repository.get_missing(&batch)?;
+        let missing = target_node_repository.get_missing(&batch).await?;
         let missing_vec: Vec<Hash> = missing.iter().cloned().collect();
 
         if missing_vec.is_empty() {
             continue;
         }
 
-        let fetched_nodes = source_node_repository.get_nodes_batch(&missing_vec)?;
+        let fetched_nodes = source_node_repository.get_nodes_batch(&missing_vec).await?;
         for hash in missing_vec {
             let node = fetched_nodes
                 .get(&hash)
@@ -103,13 +103,13 @@ fn compute_directional_diff(
     }
 
     let blob_hashes_vec: Vec<Hash> = pending_blobs.into_iter().collect();
-    let blob_transfer_set = target_blob_repository.get_missing(&blob_hashes_vec)?;
+    let blob_transfer_set = target_blob_repository.get_missing(&blob_hashes_vec).await?;
 
     Ok((node_transfer_set, blob_transfer_set, node_cache))
 }
 
 // Keep these functions available for merge.rs tests
-pub fn compute_folder_diff(
+pub async fn compute_folder_diff(
     source_node_repository: &impl NodeRepository,
     target_node_repository: &impl NodeRepository,
     target_blob_repository: &impl BlobRepository,
@@ -122,13 +122,13 @@ pub fn compute_folder_diff(
         target_node_repository,
         target_blob_repository,
         root_hash,
-    )?;
+    ).await?;
     node_transfer_set.extend(nodes);
     blob_transfer_set.extend(blobs);
     Ok(())
 }
 
-pub fn compute_file_diff(
+pub async fn compute_file_diff(
     source_node_repository: &impl NodeRepository,
     target_node_repository: &impl NodeRepository,
     target_blob_repository: &impl BlobRepository,
@@ -141,7 +141,7 @@ pub fn compute_file_diff(
         target_node_repository,
         target_blob_repository,
         root_hash,
-    )?;
+    ).await?;
     node_transfer_set.extend(nodes);
     blob_transfer_set.extend(blobs);
     Ok(())

@@ -1,5 +1,7 @@
-use crate::blob_repository::BlobRef;
-use crate::node_repository::{Entry, Hash, InMemoryNodeRepository, Node, NodeRepository};
+use phaneros_sync::blob::BlobRef;
+use crate::node_repository::{
+    Entry, Hash, InMemoryNodeRepository, Node, NodeRepository, WritableNodeRepository,
+};
 #[cfg(test)]
 mod tests {
 
@@ -34,8 +36,8 @@ mod tests {
         hasher.finalize().to_hex().to_string()
     }
 
-    #[test]
-    fn file_hash_matches_contract() {
+    #[tokio::test]
+    async fn file_hash_matches_contract() {
         let chunks = vec![chunk(b"hello"), chunk(b"world")];
 
         let (hash, _) = Node::file(chunks.clone());
@@ -43,15 +45,15 @@ mod tests {
         assert_eq!(hash, expected_file_hash(&chunks));
     }
 
-    #[test]
-    fn empty_file_hash_matches_contract() {
+    #[tokio::test]
+    async fn empty_file_hash_matches_contract() {
         let (hash, _) = Node::file(vec![]);
 
         assert_eq!(hash, expected_file_hash(&[]));
     }
 
-    #[test]
-    fn folder_hash_matches_contract() {
+    #[tokio::test]
+    async fn folder_hash_matches_contract() {
         let (file_a_hash, _) = Node::file(vec![chunk(b"aaa")]);
         let (file_b_hash, _) = Node::file(vec![chunk(b"bbb")]);
         let (subfolder_hash, _) = Node::folder(vec![], vec![Entry::new("a.txt", &file_a_hash)]);
@@ -67,23 +69,23 @@ mod tests {
         assert_eq!(hash, expected_folder_hash(&folders, &files));
     }
 
-    #[test]
-    fn empty_folder_hash_matches_contract() {
+    #[tokio::test]
+    async fn empty_folder_hash_matches_contract() {
         let (hash, _) = Node::folder(vec![], vec![]);
 
         assert_eq!(hash, expected_folder_hash(&[], &[]));
     }
 
-    #[test]
-    fn empty_folder_and_empty_file_hashes_differ() {
+    #[tokio::test]
+    async fn empty_folder_and_empty_file_hashes_differ() {
         let (folder_hash, _) = Node::folder(vec![], vec![]);
         let (file_hash, _) = Node::file(vec![]);
 
         assert_ne!(folder_hash, file_hash);
     }
 
-    #[test]
-    fn folder_hash_is_canonical_regardless_of_entry_order() {
+    #[tokio::test]
+    async fn folder_hash_is_canonical_regardless_of_entry_order() {
         let a = Entry::new("a.txt", "hash-a");
         let b = Entry::new("b.txt", "hash-b");
 
@@ -100,8 +102,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn folder_hash_depends_on_child_names() {
+    #[tokio::test]
+    async fn folder_hash_depends_on_child_names() {
         let (file_hash, _) = Node::file(vec![chunk(b"same content")]);
 
         let (folder_a_hash, _) = Node::folder(vec![], vec![Entry::new("original.txt", &file_hash)]);
@@ -110,36 +112,37 @@ mod tests {
         assert_ne!(folder_a_hash, folder_b_hash);
     }
 
-    #[test]
-    fn store_deduplicates_identical_nodes() {
-        let mut store = InMemoryNodeRepository::new();
+    #[tokio::test]
+    async fn store_deduplicates_identical_nodes() {
+        let store = InMemoryNodeRepository::new();
 
         let (hash_a, node_a) = Node::file(vec![chunk(b"same")]);
         let (hash_b, node_b) = Node::file(vec![chunk(b"same")]);
         assert_eq!(hash_a, hash_b);
 
-        store.insert(hash_a.clone(), node_a).unwrap();
-        store.insert(hash_b, node_b).unwrap();
+        store.insert(hash_a.clone(), node_a).await.unwrap();
+        store.insert(hash_b, node_b).await.unwrap();
 
         assert_eq!(store.len(), 1);
-        assert!(store.get_node(&hash_a).unwrap().is_some());
+        assert!(store.get_node(&hash_a).await.unwrap().is_some());
     }
 
-    #[test]
-    fn store_returns_root_and_nodes_by_hash() {
-        let mut store = InMemoryNodeRepository::new();
+    #[tokio::test]
+    async fn store_returns_root_and_nodes_by_hash() {
+        let store = InMemoryNodeRepository::new();
 
         let (file_hash, file_node) = Node::file(vec![chunk(b"content")]);
         let (root_hash, root_node) = Node::folder(vec![], vec![Entry::new("file.txt", &file_hash)]);
 
-        store.insert(file_hash.clone(), file_node).unwrap();
-        store.insert(root_hash.clone(), root_node).unwrap();
-        store.set_root(root_hash.clone()).unwrap();
+        store.insert(file_hash.clone(), file_node).await.unwrap();
+        store.insert(root_hash.clone(), root_node).await.unwrap();
+        store.set_root(root_hash.clone()).await.unwrap();
 
-        assert_eq!(store.root_hash().unwrap(), Some(&root_hash));
+        assert_eq!(store.root_hash().await.unwrap(), Some(root_hash.clone()));
 
         let root = store
             .get_node(&root_hash)
+            .await
             .unwrap()
             .expect("root node present");
         match root {

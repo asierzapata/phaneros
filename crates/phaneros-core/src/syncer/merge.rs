@@ -48,11 +48,11 @@ struct EntryRef {
 
 type EntryMap = HashMap<String, EntryRef>;
 
-pub fn merge(
-    local_node_repository: &mut impl WritableNodeRepository,
-    remote_node_repository: &mut impl WritableNodeRepository,
-    local_blob_repository: &mut impl WritableBlobRepository,
-    remote_blob_repository: &mut impl WritableBlobRepository,
+pub async fn merge(
+    local_node_repository: &impl WritableNodeRepository,
+    remote_node_repository: &impl WritableNodeRepository,
+    local_blob_repository: &impl WritableBlobRepository,
+    remote_blob_repository: &impl WritableBlobRepository,
     base_root_hash: &Hash,
     local_root_hash: &Hash,
     remote_root_hash: &Hash,
@@ -60,10 +60,10 @@ pub fn merge(
     let mut plan = MergePlan::default();
 
     let merged_root_hash = {
-        let local_nodes = &*local_node_repository;
-        let remote_nodes = &*remote_node_repository;
-        let local_blobs = &*local_blob_repository;
-        let remote_blobs = &*remote_blob_repository;
+        let local_nodes = local_node_repository;
+        let remote_nodes = remote_node_repository;
+        let local_blobs = local_blob_repository;
+        let remote_blobs = remote_blob_repository;
 
         merge_folder(
             Some(base_root_hash),
@@ -74,7 +74,7 @@ pub fn merge(
             local_blobs,
             remote_blobs,
             &mut plan,
-        )?
+        ).await?
         .ok_or_else(|| SyncError::MissingSourceNode {
             hash: local_root_hash.clone(),
         })?
@@ -82,51 +82,54 @@ pub fn merge(
 
     for hash in &plan.to_local_blobs {
         let blob = remote_blob_repository
-            .get_blob(hash)?
+            .get_blob(hash).await?
             .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
-        local_blob_repository.insert(hash.clone(), blob)?;
+        local_blob_repository.insert(hash.clone(), blob).await?;
     }
     for hash in &plan.to_remote_blobs {
         let blob = local_blob_repository
-            .get_blob(hash)?
+            .get_blob(hash).await?
             .ok_or_else(|| SyncError::MissingSourceBlob { hash: hash.clone() })?;
-        remote_blob_repository.insert(hash.clone(), blob)?;
+        remote_blob_repository.insert(hash.clone(), blob).await?;
     }
 
     for hash in &plan.to_local_nodes {
         let node = remote_node_repository
-            .get_node(hash)?
+            .get_node(hash).await?
             .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
-        local_node_repository.insert(hash.clone(), node)?;
+        local_node_repository.insert(hash.clone(), node).await?;
     }
     for hash in &plan.to_remote_nodes {
         let node = local_node_repository
-            .get_node(hash)?
+            .get_node(hash).await?
             .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
-        remote_node_repository.insert(hash.clone(), node)?;
+        remote_node_repository.insert(hash.clone(), node).await?;
     }
     for (hash, node) in &plan.built_nodes {
-        local_node_repository.insert(hash.clone(), node.clone())?;
-        remote_node_repository.insert(hash.clone(), node.clone())?;
+        local_node_repository.insert(hash.clone(), node.clone()).await?;
+        remote_node_repository.insert(hash.clone(), node.clone()).await?;
     }
 
-    local_node_repository.set_root(merged_root_hash.clone())?;
-    remote_node_repository.set_root(merged_root_hash)?;
+    local_node_repository.set_root(merged_root_hash.clone()).await?;
+    remote_node_repository.set_root(merged_root_hash).await?;
 
     Ok(plan.reconciled_nodes())
 }
 
-fn merge_folder(
-    base_hash: Option<&Hash>,
-    local_hash: Option<&Hash>,
-    remote_hash: Option<&Hash>,
-    local_node_repository: &impl NodeRepository,
-    remote_node_repository: &impl NodeRepository,
-    local_blob_repository: &impl BlobRepository,
-    remote_blob_repository: &impl BlobRepository,
-    plan: &mut MergePlan,
-) -> Result<Option<Hash>, SyncError> {
-    // Both sides agree (also covers all-absent).
+use futures::future::BoxFuture;
+
+fn merge_folder<'a>(
+    base_hash: Option<&'a Hash>,
+    local_hash: Option<&'a Hash>,
+    remote_hash: Option<&'a Hash>,
+    local_node_repository: &'a (impl NodeRepository + Send + Sync),
+    remote_node_repository: &'a (impl NodeRepository + Send + Sync),
+    local_blob_repository: &'a (impl BlobRepository + Send + Sync),
+    remote_blob_repository: &'a (impl BlobRepository + Send + Sync),
+    plan: &'a mut MergePlan,
+) -> BoxFuture<'a, Result<Option<Hash>, SyncError>> {
+    Box::pin(async move {
+        // Both sides agree (also covers all-absent).
     if local_hash == remote_hash {
         return Ok(local_hash.cloned());
     }
@@ -140,7 +143,7 @@ fn merge_folder(
                 remote_node_repository,
                 local_blob_repository,
                 plan,
-            )?;
+            ).await?;
             return Ok(Some(remote_hash.clone()));
         }
         return Ok(None);
@@ -155,7 +158,7 @@ fn merge_folder(
                 remote_node_repository,
                 remote_blob_repository,
                 plan,
-            )?;
+            ).await?;
             return Ok(Some(local_hash.clone()));
         }
         return Ok(None);
@@ -167,19 +170,19 @@ fn merge_folder(
         NodeSource::Any,
         local_node_repository,
         remote_node_repository,
-    )?;
+    ).await?;
     let local_entries = load_folder_entries(
         local_hash,
         NodeSource::Local,
         local_node_repository,
         remote_node_repository,
-    )?;
+    ).await?;
     let remote_entries = load_folder_entries(
         remote_hash,
         NodeSource::Remote,
         local_node_repository,
         remote_node_repository,
-    )?;
+    ).await?;
 
     let mut names = BTreeSet::new();
     names.extend(base_entries.keys().cloned());
@@ -225,7 +228,7 @@ fn merge_folder(
                     remote_node_repository,
                     local_blob_repository,
                     plan,
-                )?;
+                ).await?;
                 let stable_name = reserve_exact_name(&name, &mut used_output_names);
                 push_entry(
                     stable_name,
@@ -247,7 +250,7 @@ fn merge_folder(
                     remote_node_repository,
                     remote_blob_repository,
                     plan,
-                )?;
+                ).await?;
                 let stable_name = reserve_exact_name(&name, &mut used_output_names);
                 push_entry(
                     stable_name,
@@ -278,7 +281,7 @@ fn merge_folder(
                             local_blob_repository,
                             remote_blob_repository,
                             plan,
-                        )? {
+                        ).await? {
                             let stable_name = reserve_exact_name(&name, &mut used_output_names);
                             push_entry(
                                 stable_name,
@@ -297,14 +300,14 @@ fn merge_folder(
                             remote_node_repository,
                             remote_blob_repository,
                             plan,
-                        )?;
+                        ).await?;
                         queue_remote_subtree_for_local(
                             &remote.hash,
                             local_node_repository,
                             remote_node_repository,
                             local_blob_repository,
                             plan,
-                        )?;
+                        ).await?;
 
                         let stable_name = reserve_exact_name(&name, &mut used_output_names);
                         push_entry(
@@ -339,7 +342,7 @@ fn merge_folder(
                     remote_node_repository,
                     remote_blob_repository,
                     plan,
-                )?;
+                ).await?;
 
                 let conflict_name = reserve_suffixed_name(
                     &name,
@@ -362,7 +365,7 @@ fn merge_folder(
                     remote_node_repository,
                     local_blob_repository,
                     plan,
-                )?;
+                ).await?;
 
                 let conflict_name = reserve_suffixed_name(
                     &name,
@@ -388,6 +391,7 @@ fn merge_folder(
     plan.push_built_node(merged_hash.clone(), merged_node);
 
     Ok(Some(merged_hash))
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -397,7 +401,7 @@ enum NodeSource {
     Any,
 }
 
-fn load_folder_entries(
+async fn load_folder_entries(
     hash: Option<&Hash>,
     source: NodeSource,
     local_node_repository: &impl NodeRepository,
@@ -408,11 +412,15 @@ fn load_folder_entries(
     };
 
     let node = match source {
-        NodeSource::Local => local_node_repository.get_node(hash)?,
-        NodeSource::Remote => remote_node_repository.get_node(hash)?,
-        NodeSource::Any => local_node_repository
-            .get_node(hash)?
-            .or(remote_node_repository.get_node(hash)?),
+        NodeSource::Local => local_node_repository.get_node(hash).await?,
+        NodeSource::Remote => remote_node_repository.get_node(hash).await?,
+        NodeSource::Any => {
+            if let Some(n) = local_node_repository.get_node(hash).await? {
+                Some(n)
+            } else {
+                remote_node_repository.get_node(hash).await?
+            }
+        }
     }
     .ok_or_else(|| SyncError::MissingSourceNode { hash: hash.clone() })?;
 
@@ -497,7 +505,7 @@ fn reserve_suffixed_name(
     }
 }
 
-fn queue_local_subtree_for_remote(
+async fn queue_local_subtree_for_remote(
     root_hash: &Hash,
     local_node_repository: &impl NodeRepository,
     remote_node_repository: &impl NodeRepository,
@@ -509,13 +517,13 @@ fn queue_local_subtree_for_remote(
         remote_node_repository,
         remote_blob_repository,
         root_hash,
-    )?;
+    ).await?;
     plan.to_remote_nodes.extend(nodes);
     plan.to_remote_blobs.extend(blobs);
     Ok(())
 }
 
-fn queue_remote_subtree_for_local(
+async fn queue_remote_subtree_for_local(
     root_hash: &Hash,
     local_node_repository: &impl NodeRepository,
     remote_node_repository: &impl NodeRepository,
@@ -527,7 +535,7 @@ fn queue_remote_subtree_for_local(
         local_node_repository,
         local_blob_repository,
         root_hash,
-    )?;
+    ).await?;
     plan.to_local_nodes.extend(nodes);
     plan.to_local_blobs.extend(blobs);
     Ok(())

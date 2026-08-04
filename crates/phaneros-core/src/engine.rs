@@ -63,7 +63,7 @@ impl SyncEngine {
         Self { config }
     }
 
-    pub fn run(&self) -> Result<(), EngineError> {
+    pub async fn run(&self) -> Result<(), EngineError> {
         let drive_session = DriveSession::open(&self.config.drive_id, &self.config.path)
             .map_err(|e| EngineError::DriveSessionFailed(e.to_string()))?;
 
@@ -83,22 +83,24 @@ impl SyncEngine {
             rescan,
         } = watch_handle;
 
-        let (sync_trigger_tx, sync_trigger_rx) = std::sync::mpsc::channel();
+        let (sync_trigger_tx, sync_trigger_rx) = tokio::sync::mpsc::channel(100);
 
         let watcher_forward_tx = sync_trigger_tx.clone();
-        std::thread::spawn(move || {
+        tokio::task::spawn_blocking(move || {
             for root_hash in watcher_root_hashes {
-                if watcher_forward_tx.send(root_hash).is_err() {
+                if watcher_forward_tx.blocking_send(root_hash).is_err() {
                     break;
                 }
             }
         });
 
-        let remote_node_repository = Arc::new(RwLock::new(HttpNodeRepository::new(
-            &self.config.store_url,
-            &self.config.drive_id,
-            &self.config.token,
-        )));
+        let remote_node_repository = Arc::new(RwLock::new(
+            HttpNodeRepository::new(
+                self.config.store_url.clone(),
+                self.config.drive_id.clone(),
+                self.config.token.clone(),
+            ).await
+        ));
 
         let remote_rescan = rescan.clone();
         let remote_trigger_tx = sync_trigger_tx.clone();
@@ -108,7 +110,7 @@ impl SyncEngine {
             self.config.token.clone(),
             move |_event| match remote_rescan.rescan() {
                 Ok(root_hash) => {
-                    let _ = remote_trigger_tx.send(root_hash);
+                    let _ = remote_trigger_tx.try_send(root_hash);
                 }
                 Err(err) => {
                     eprintln!("Failed to rescan after remote root-changed event: {err}");
@@ -116,11 +118,13 @@ impl SyncEngine {
             },
         );
 
-        let remote_blob_repository = Arc::new(RwLock::new(HttpBlobRepository::new(
-            &self.config.store_url,
-            &self.config.drive_id,
-            &self.config.token,
-        )));
+        let remote_blob_repository = Arc::new(RwLock::new(
+            HttpBlobRepository::new(
+                self.config.store_url.clone(),
+                self.config.drive_id.clone(),
+                self.config.token.clone(),
+            )
+        ));
 
         let mut syncer = Syncer::new(
             sync_trigger_rx,
@@ -144,7 +148,7 @@ impl SyncEngine {
             syncer = syncer.with_store_dump(dump_dir.clone());
         }
 
-        syncer.run();
+        syncer.run().await;
         Ok(())
     }
 }

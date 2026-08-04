@@ -115,8 +115,8 @@ fn rand_id() -> u128 {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_compression_ratio() {
+    #[tokio::test]
+    async fn test_compression_ratio() {
         let metrics = CompressionMetrics {
             total_raw_bytes: 1000,
             total_compressed_bytes: 400,
@@ -128,8 +128,8 @@ mod tests {
         assert_eq!(metrics.bandwidth_saved_bytes(), 600);
     }
 
-    #[test]
-    fn test_empty_raw_bytes_compression_ratio() {
+    #[tokio::test]
+    async fn test_empty_raw_bytes_compression_ratio() {
         let metrics = CompressionMetrics::default();
         assert_eq!(metrics.compression_ratio(), 0.0);
         assert_eq!(metrics.bandwidth_saved_bytes(), 0);

@@ -1,3 +1,4 @@
+use crate::blob_repository::WritableBlobRepository;
 use crate::blob_repository::{Blob, BlobRef, BlobRepository, InMemoryBlobRepository};
 
 // ---- fixture helpers -------------------------------------------------------
@@ -5,7 +6,7 @@ use crate::blob_repository::{Blob, BlobRef, BlobRepository, InMemoryBlobReposito
 /// Inserts `bytes` under their own content hash and returns the tree-side ref.
 /// This mirrors how the scanner will feed the store: the key is always derived
 /// from the content, never chosen by the caller.
-fn insert_bytes(store: &mut InMemoryBlobRepository, bytes: &[u8]) -> BlobRef {
+async fn insert_bytes(store: &mut InMemoryBlobRepository, bytes: &[u8]) -> BlobRef {
     let blob_ref = BlobRef::from_bytes(bytes);
     store
         .insert(
@@ -14,6 +15,7 @@ fn insert_bytes(store: &mut InMemoryBlobRepository, bytes: &[u8]) -> BlobRef {
                 bytes: bytes.to_vec(),
             },
         )
+        .await
         .unwrap();
     blob_ref
 }
@@ -23,43 +25,43 @@ fn insert_bytes(store: &mut InMemoryBlobRepository, bytes: &[u8]) -> BlobRef {
 mod round_trip {
     use super::*;
 
-    #[test]
-    fn stored_bytes_come_back_identical() {
+    #[tokio::test]
+    async fn stored_bytes_come_back_identical() {
         // The one property a blob store cannot exist without: what you put in
         // is what you get out. Everything else is optimization.
         let mut store = InMemoryBlobRepository::new();
-        let blob_ref = insert_bytes(&mut store, b"cat-bytes");
+        let blob_ref = insert_bytes(&mut store, b"cat-bytes").await;
 
         let stored = store
-            .get_blob(&blob_ref.hash)
+            .get_blob(&blob_ref.hash).await
             .unwrap()
             .expect("blob should exist");
 
         assert_eq!(stored.bytes, b"cat-bytes");
     }
 
-    #[test]
-    fn stored_bytes_rehash_to_their_key() {
+    #[tokio::test]
+    async fn stored_bytes_rehash_to_their_key() {
         // Integrity: the key must BE the content's hash, or the store is a
         // plain map wearing a content-addressed costume. A reader must be able
         // to verify any blob it receives by rehashing it.
         let mut store = InMemoryBlobRepository::new();
-        let blob_ref = insert_bytes(&mut store, b"verify me");
+        let blob_ref = insert_bytes(&mut store, b"verify me").await;
 
-        let stored = store.get_blob(&blob_ref.hash).unwrap().unwrap();
+        let stored = store.get_blob(&blob_ref.hash).await.unwrap().unwrap();
         let rehashed = blake3::hash(&stored.bytes).to_hex().to_string();
 
         assert_eq!(rehashed, blob_ref.hash);
     }
 
-    #[test]
-    fn ref_size_matches_stored_bytes() {
+    #[tokio::test]
+    async fn ref_size_matches_stored_bytes() {
         // The tree-side BlobRef promises a size so the syncer can plan
         // transfers without fetching; that promise must match reality.
         let mut store = InMemoryBlobRepository::new();
-        let blob_ref = insert_bytes(&mut store, b"12 bytes long");
+        let blob_ref = insert_bytes(&mut store, b"12 bytes long").await;
 
-        let stored = store.get_blob(&blob_ref.hash).unwrap().unwrap();
+        let stored = store.get_blob(&blob_ref.hash).await.unwrap().unwrap();
 
         assert_eq!(blob_ref.size, stored.bytes.len() as u64);
     }
@@ -70,27 +72,27 @@ mod round_trip {
 mod lookup {
     use super::*;
 
-    #[test]
-    fn missing_hash_is_absent_everywhere() {
+    #[tokio::test]
+    async fn missing_hash_is_absent_everywhere() {
         let store = InMemoryBlobRepository::new();
         let never_inserted = BlobRef::from_bytes(b"ghost");
 
-        assert!(store.get_blob(&never_inserted.hash).unwrap().is_none());
-        assert!(!store.contains(&never_inserted.hash).unwrap());
+        assert!(store.get_blob(&never_inserted.hash).await.unwrap().is_none());
+        assert!(!store.contains(&never_inserted.hash).await.unwrap());
     }
 
-    #[test]
-    fn contains_agrees_with_get_blob() {
+    #[tokio::test]
+    async fn contains_agrees_with_get_blob() {
         // `contains` exists so a remote store can answer "do you have it?"
         // without shipping bytes. Cheap answer and expensive answer must never
         // disagree.
         let mut store = InMemoryBlobRepository::new();
-        let blob_ref = insert_bytes(&mut store, b"present");
+        let blob_ref = insert_bytes(&mut store, b"present").await;
 
-        assert!(store.contains(&blob_ref.hash).unwrap());
+        assert!(store.contains(&blob_ref.hash).await.unwrap());
         assert_eq!(
-            store.contains(&blob_ref.hash).unwrap(),
-            store.get_blob(&blob_ref.hash).unwrap().is_some()
+            store.contains(&blob_ref.hash).await.unwrap(),
+            store.get_blob(&blob_ref.hash).await.unwrap().is_some()
         );
     }
 }
@@ -100,25 +102,25 @@ mod lookup {
 mod content_addressing {
     use super::*;
 
-    #[test]
-    fn identical_bytes_occupy_one_slot() {
+    #[tokio::test]
+    async fn identical_bytes_occupy_one_slot() {
         // Content addressing IS deduplication: two files with the same bytes
         // share one blob, no matter how many times the scanner meets them.
         let mut store = InMemoryBlobRepository::new();
-        let ref_a = insert_bytes(&mut store, b"identical");
-        let ref_b = insert_bytes(&mut store, b"identical");
+        let ref_a = insert_bytes(&mut store, b"identical").await;
+        let ref_b = insert_bytes(&mut store, b"identical").await;
 
         assert_eq!(ref_a.hash, ref_b.hash);
         assert_eq!(store.len(), 1);
     }
 
-    #[test]
-    fn reinserting_a_hash_does_not_clobber_the_original() {
+    #[tokio::test]
+    async fn reinserting_a_hash_does_not_clobber_the_original() {
         // insert() uses or_insert: first write wins. For honest callers this
         // is idempotence (same hash implies same bytes). It also means a buggy
         // or malicious second write can't silently corrupt an existing blob.
         let mut store = InMemoryBlobRepository::new();
-        let blob_ref = insert_bytes(&mut store, b"original");
+        let blob_ref = insert_bytes(&mut store, b"original").await;
 
         store
             .insert(
@@ -126,10 +128,9 @@ mod content_addressing {
                 Blob {
                     bytes: b"impostor".to_vec(),
                 },
-            )
-            .unwrap();
+            ).await.unwrap();
 
-        let stored = store.get_blob(&blob_ref.hash).unwrap().unwrap();
+        let stored = store.get_blob(&blob_ref.hash).await.unwrap().unwrap();
         assert_eq!(stored.bytes, b"original");
         assert_eq!(store.len(), 1);
     }
