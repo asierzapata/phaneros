@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Phaneros — Refined Tray UI (Shadcn OKLCH)</title>
+        <!-- Google Fonts: Merriweather, Inter, JetBrains Mono -->
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400&display=swap"
+            rel="stylesheet"
+        />
+
+        <style>
+            /* ==========================================================================
+       USER'S SHADCN OKLCH COLOR SYSTEM & TOKENS
+       ========================================================================== */
+            :root {
+                /* Light Mode */
+                --background: oklch(0.99 0.002 240);
+                --background-paper-texture: radial-gradient(
+                    #cbd5e1 0.85px,
+                    transparent 0.85px
+                );
+                --foreground: oklch(0.148 0.004 228.8);
+                --card: oklch(1 0 0);
+                --card-foreground: oklch(0.148 0.004 228.8);
+                --primary: oklch(0.5 0.134 242.749);
+                --primary-foreground: oklch(0.977 0.013 236.62);
+                --secondary: oklch(0.967 0.001 286.375);
+                --secondary-foreground: oklch(0.21 0.006 285.885);
+                --muted: oklch(0.963 0.002 197.1);
+                --muted-foreground: oklch(0.52 0.02 220);
+                --border: oklch(0.92 0.005 214.3);
+                --input: oklch(0.925 0.005 214.3);
+                --ring: oklch(0.723 0.014 214.4);
+                --radius: 0.75rem;
+
+                --emerald-green: #059669;
+                --emerald-bg: #ecfdf5;
+                --emerald-border: #a7f3d0;
+
+                --amber-gold: #d97706;
+                --amber-bg: #fffbebf5;
+                --amber-border: #fde68a;
+
+                --font-serif: "Merriweather", serif;
+                --font-sans: "Inter", -apple-system, sans-serif;
+                --font-mono: "JetBrains Mono", monospace;
+
+                --workspace-bg: #0c0d10;
+                --workspace-border: rgba(255, 255, 255, 0.1);
+                --card-shadow:
+                    0 12px 28px -4px rgba(0, 0, 0, 0.06),
+                    0 4px 10px -2px rgba(0, 0, 0, 0.03);
+                --card-shadow-hover:
+                    0 16px 36px -4px rgba(0, 0, 0, 0.1),
+                    0 6px 14px -2px rgba(0, 0, 0, 0.05);
+            }
+
+            body.dark {
+                /* Dark Mode */
+                --background: oklch(0.148 0.004 228.8);
+                --background-paper-texture: radial-gradient(
+                    rgba(255, 255, 255, 0.09) 0.85px,
+                    transparent 0.85px
+                );
+                --foreground: oklch(0.987 0.002 197.1);
+                --card: oklch(0.218 0.008 223.9);
+                --card-foreground: oklch(0.987 0.002 197.1);
+                --secondary: oklch(0.274 0.006 286.033);
+                --secondary-foreground: oklch(0.985 0 0);
+                --muted: oklch(0.275 0.011 216.9);
+                --muted-foreground: oklch(0.723 0.014 214.4);
+                --border: oklch(1 0 0 / 10%);
+                --input: oklch(1 0 0 / 15%);
+
+                --emerald-green: #34d399;
+                --emerald-bg: rgba(16, 185, 129, 0.12);
+                --emerald-border: rgba(16, 185, 129, 0.3);
+
+                --amber-gold: #fbbf24;
+                --amber-bg: rgba(245, 158, 11, 0.12);
+                --amber-border: rgba(245, 158, 11, 0.3);
+
+                --card-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
+                --card-shadow-hover: 0 18px 40px rgba(0, 0, 0, 0.6);
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: var(--font-sans);
+                background-color: var(--workspace-bg);
+                color: #f3f4f6;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                line-height: 1.5;
+                -webkit-font-smoothing: antialiased;
+                padding-bottom: 80px;
+            }
+
+            /* Outer Framework Header */
+            .app-header {
+                padding: 2.5rem 3rem 1.5rem 3rem;
+                max-width: 1440px;
+                margin: 0 auto;
+                width: 100%;
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                border-bottom: 1px solid var(--workspace-border);
+            }
+
+            .brand-title {
+                font-size: 0.82rem;
+                text-transform: uppercase;
+                letter-spacing: 0.15em;
+                color: #38bdf8;
+                font-weight: 700;
+                margin-bottom: 0.5rem;
+            }
+
+            .main-heading {
+                font-family: var(--font-serif);
+                font-size: 2.2rem;
+                font-weight: 700;
+                letter-spacing: -0.02em;
+                color: #ffffff;
+            }
+
+            .heading-subtitle {
+                color: #94a3b8;
+                font-size: 0.95rem;
+                margin-top: 0.3rem;
+                max-width: 720px;
+            }
+
+            .controls-group {
+                display: flex;
+                gap: 10px;
+            }
+
+            .btn-action {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid var(--workspace-border);
+                color: #fff;
+                padding: 8px 14px;
+                border-radius: 8px;
+                font-size: 0.82rem;
+                font-weight: 600;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                transition: background 0.2s;
+            }
+
+            .btn-action:hover {
+                background: rgba(255, 255, 255, 0.15);
+            }
+
+            /* Main Container Layout */
+            .container {
+                max-width: 1440px;
+                margin: 2rem auto;
+                padding: 0 3rem;
+                width: 100%;
+                display: grid;
+                grid-template-columns: 380px 1fr;
+                gap: 2.5rem;
+                align-items: start;
+            }
+
+            /* Simulated macOS Menu Bar Frame */
+            .menubar-frame {
+                background: #18181b;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 12px 12px 0 0;
+                padding: 8px 16px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-size: 0.8rem;
+                color: #999;
+            }
+
+            .menubar-left {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                font-weight: 600;
+                color: #e5e7eb;
+            }
+
+            .tray-wrapper {
+                position: relative;
+                margin-top: -1px;
+            }
+
+            /* ==========================================================================
+       REFINED TRAY UI (USER FEEDBACK INTEGRATED)
+       ========================================================================== */
+            .tray-container {
+                width: 380px;
+                /* Continuous dotted paper texture background through top heading */
+                background-color: var(--background);
+                background-image: var(--background-paper-texture);
+                background-size: 14px 14px;
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                box-shadow: 0 25px 60px rgba(0, 0, 0, 0.22);
+                overflow: hidden;
+                color: var(--foreground);
+                font-family: var(--font-sans);
+                padding-bottom: 16px;
+                transition: all 0.25s ease;
+            }
+
+            /* 1. Header (Dotted paper background, NO solid white card, NO status pill) */
+            .tray-header {
+                padding: 20px 20px 12px 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .brand-wordmark {
+                font-family: var(--font-serif);
+                font-size: 1.45rem;
+                font-weight: 700;
+                letter-spacing: -0.02em;
+                color: var(--foreground);
+                line-height: 1;
+            }
+
+            .header-icons {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .icon-btn {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: var(--card);
+                border: 1px solid var(--border);
+                color: var(--foreground);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                box-shadow: var(--card-shadow);
+                transition: all 0.15s ease;
+            }
+
+            .icon-btn:hover {
+                border-color: var(--ring);
+                transform: translateY(-1px);
+            }
+
+            /* 2. Hero Sync Health Card (Tick badge for Up-to-date, depth drop shadow) */
+            .hero-health-card {
+                margin: 4px 16px 16px 16px;
+                background: var(--card);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 18px 20px;
+                box-shadow: var(--card-shadow);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                transition: all 0.2s ease;
+            }
+
+            .hero-health-info {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+
+            .hero-health-title {
+                font-family: var(--font-serif);
+                font-size: 1.35rem;
+                font-weight: 700;
+                color: var(--foreground);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .hero-health-sub {
+                font-size: 0.76rem;
+                color: var(--muted-foreground);
+            }
+
+            /* Green Tick Badge (Replaces 100% dial for synced state) */
+            .tick-badge {
+                width: 38px;
+                height: 38px;
+                border-radius: 50%;
+                background: var(--emerald-bg);
+                border: 1px solid var(--emerald-border);
+                color: var(--emerald-green);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.1rem;
+                font-weight: 700;
+                box-shadow: 0 2px 8px rgba(5, 150, 105, 0.15);
+            }
+
+            /* Syncing Radial Ring (Only shown during active sync) */
+            .sync-ring {
+                width: 42px;
+                height: 42px;
+                border-radius: 50%;
+                background: conic-gradient(var(--primary) 68%, var(--muted) 0);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .sync-ring-inner {
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                background: var(--card);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.7rem;
+                font-family: var(--font-mono);
+                font-weight: 700;
+                color: var(--foreground);
+            }
+
+            /* Section Label */
+            .section-label {
+                font-size: 0.72rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.09em;
+                color: var(--muted-foreground);
+                padding: 0 20px 8px 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            /* 4. Drive Cards Stack (Card per Drive, Ring Gauge, Click opens folder) */
+            .drives-stack {
+                display: flex;
+                flex-direction: column;
+                padding: 0 16px;
+                gap: 12px;
+            }
+
+            .drive-card {
+                background: var(--card);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 16px;
+                box-shadow: var(--card-shadow);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+                position: relative;
+            }
+
+            .drive-card:hover {
+                box-shadow: var(--card-shadow-hover);
+                border-color: var(--ring);
+                transform: translateY(-2px);
+            }
+
+            .drive-info {
+                display: flex;
+                flex-direction: column;
+                gap: 3px;
+            }
+
+            .drive-name-row {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .drive-name {
+                font-weight: 700;
+                font-size: 0.92rem;
+                color: var(--foreground);
+            }
+
+            .drive-path {
+                font-size: 0.74rem;
+                color: var(--muted-foreground);
+            }
+
+            .drive-sync-time {
+                font-size: 0.72rem;
+                color: var(--emerald-green);
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                margin-top: 2px;
+            }
+
+            .drive-ring-box {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 4px;
+            }
+
+            .mini-ring {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                background: conic-gradient(var(--primary) 42%, var(--muted) 0);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .mini-ring-inner {
+                width: 26px;
+                height: 26px;
+                border-radius: 50%;
+                background: var(--card);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.62rem;
+                font-family: var(--font-mono);
+                font-weight: 700;
+                color: var(--foreground);
+            }
+
+            .drive-capacity-text {
+                font-family: var(--font-mono);
+                font-size: 0.68rem;
+                color: var(--muted-foreground);
+                font-weight: 600;
+            }
+
+            .open-folder-prompt {
+                position: absolute;
+                top: 10px;
+                right: 12px;
+                font-size: 0.68rem;
+                font-weight: 600;
+                color: var(--primary);
+                opacity: 0;
+                transition: opacity 0.15s;
+            }
+
+            .drive-card:hover .open-folder-prompt {
+                opacity: 1;
+            }
+
+            /* Recent File Activity Stream */
+            .activity-section {
+                margin-top: 16px;
+                transition: all 0.25s ease;
+            }
+
+            .activity-list {
+                display: flex;
+                flex-direction: column;
+                padding: 0 16px;
+                gap: 6px;
+            }
+
+            .activity-item {
+                background: var(--card);
+                border: 1px solid var(--border);
+                border-radius: calc(var(--radius) - 3px);
+                padding: 8px 12px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                font-size: 0.78rem;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+            }
+
+            .activity-left {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                overflow: hidden;
+            }
+
+            .file-ext-badge {
+                font-family: var(--font-mono);
+                font-size: 0.65rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                padding: 2px 6px;
+                border-radius: 4px;
+                background: var(--secondary);
+                color: var(--secondary-foreground);
+                border: 1px solid var(--border);
+                flex-shrink: 0;
+            }
+
+            .activity-name {
+                font-weight: 500;
+                color: var(--foreground);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 200px;
+            }
+
+            /* Conflict Card Styles */
+            .conflict-health-card {
+                background: var(--amber-bg) !important;
+                border-color: var(--amber-border) !important;
+            }
+
+            .warning-badge {
+                width: 38px;
+                height: 38px;
+                border-radius: 50%;
+                background: rgba(245, 158, 11, 0.15);
+                border: 1px solid var(--amber-border);
+                color: var(--amber-gold);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.2rem;
+                font-weight: 800;
+                box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
+            }
+
+            .conflict-banner-card {
+                margin: 0 16px 14px 16px;
+                background: var(--card);
+                border: 1px solid var(--amber-border);
+                border-radius: var(--radius);
+                padding: 14px 16px;
+                box-shadow: var(--card-shadow);
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .conflict-banner-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 0.8rem;
+                font-weight: 700;
+                color: var(--amber-gold);
+            }
+
+            .conflict-options-row {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+
+            .btn-conflict-option {
+                background: var(--secondary);
+                border: 1px solid var(--border);
+                color: var(--foreground);
+                padding: 8px;
+                border-radius: calc(var(--radius) - 3px);
+                font-size: 0.72rem;
+                font-weight: 600;
+                cursor: pointer;
+                text-align: center;
+                transition: all 0.15s;
+            }
+
+            .btn-conflict-option:hover {
+                border-color: var(--amber-gold);
+                background: var(--card);
+            }
+
+            /* Explanation & Product Case Panel */
+            .doc-panel {
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid var(--workspace-border);
+                border-radius: 16px;
+                padding: 24px;
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .doc-title {
+                font-family: var(--font-serif);
+                font-size: 1.3rem;
+                font-weight: 700;
+                color: #fff;
+            }
+
+            .case-box {
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid var(--workspace-border);
+                border-radius: 12px;
+                padding: 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                font-size: 0.88rem;
+                line-height: 1.55;
+            }
+
+            .case-box h4 {
+                color: #38bdf8;
+                font-size: 0.95rem;
+            }
+
+            .case-list {
+                list-style: none;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                color: #cbd5e1;
+            }
+
+            .case-list li {
+                display: flex;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            .case-bullet {
+                color: #38bdf8;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body id="appBody">
+        <!-- FRAME HEADER -->
+        <header class="app-header">
+            <div>
+                <div class="brand-title">
+                    Phaneros Design Studio • Refined Tray UX
+                </div>
+                <h1 class="main-heading">Refined Paper Tray & Drive Stack</h1>
+                <p class="heading-subtitle">
+                    Continuous dotted background, depth card shadows, green tick
+                    status badge, per-drive ring gauges, click-to-open Finder
+                    cards, and top action buttons.
+                </p>
+            </div>
+            <div class="controls-group">
+                <button class="btn-action" onclick="setSimState('synced')">
+                    State: Up to Date
+                </button>
+                <button class="btn-action" onclick="setSimState('syncing')">
+                    State: Syncing
+                </button>
+                <button class="btn-action" onclick="setSimState('conflict')">
+                    State: Conflict
+                </button>
+                <button class="btn-action" onclick="toggleActivitySection()">
+                    Toggle Recent Activity
+                </button>
+                <button class="btn-action" onclick="toggleTheme()">
+                    Toggle Dark/Light
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN CONTAINER -->
+        <main class="container">
+            <!-- LEFT: REFINED TRAY UI -->
+            <div>
+                <div class="menubar-frame">
+                    <div class="menubar-left">
+                        <span>Finder</span>
+                        <span>File</span>
+                        <span>Edit</span>
+                    </div>
+                    <div style="font-weight: 700; color: #38bdf8">
+                        Phaneros • 12:35 PM
+                    </div>
+                </div>
+
+                <div class="tray-wrapper">
+                    <div class="tray-container">
+                        <!-- 1. Header (Dotted paper background, NO solid white card, NO status pill) -->
+                        <div class="tray-header">
+                            <div class="brand-wordmark">Phaneros</div>
+                            <div class="header-icons">
+                                <button
+                                    class="icon-btn"
+                                    title="Open Full Control Center"
+                                    onclick="
+                                        alert(
+                                            'Launching Phaneros Desktop Control Center...',
+                                        )
+                                    "
+                                >
+                                    <svg
+                                        width="15"
+                                        height="15"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2.2"
+                                    >
+                                        <path
+                                            d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+                                        />
+                                        <polyline points="15 3 21 3 21 9" />
+                                        <line x1="10" y1="14" x2="21" y2="3" />
+                                    </svg>
+                                </button>
+                                <button
+                                    class="icon-btn"
+                                    title="Preferences"
+                                    onclick="alert('Opening Preferences...')"
+                                >
+                                    <svg
+                                        width="15"
+                                        height="15"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2.2"
+                                    >
+                                        <circle cx="12" cy="12" r="3" />
+                                        <path
+                                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+                                        />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 3. Hero Sync Health Card (Green Tick for Up to Date) -->
+                        <div class="hero-health-card" id="heroCard">
+                            <div class="hero-health-info">
+                                <div class="hero-health-title" id="heroTitle">
+                                    Up to Date
+                                </div>
+                                <div class="hero-health-sub" id="heroSub">
+                                    All drives reconciled • 12s ago
+                                </div>
+                            </div>
+                            <div id="heroBadge">
+                                <div class="tick-badge">✓</div>
+                            </div>
+                        </div>
+
+                        <!-- Conflict Resolution Banner (Conditional) -->
+                        <div
+                            class="conflict-banner-card"
+                            id="conflictBanner"
+                            style="display: none"
+                        >
+                            <div class="conflict-banner-header">
+                                <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2.5"
+                                >
+                                    <path
+                                        d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                                    />
+                                    <line x1="12" y1="9" x2="12" y2="13" />
+                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                </svg>
+                                <span
+                                    >Conflict in
+                                    <code>docs/roadmap.md</code></span
+                                >
+                            </div>
+                            <div
+                                style="
+                                    font-size: 0.74rem;
+                                    color: var(--muted-foreground);
+                                "
+                            >
+                                Simultaneous edits detected on MacBook Pro and
+                                Store.
+                            </div>
+                            <div class="conflict-options-row">
+                                <button
+                                    class="btn-conflict-option"
+                                    onclick="
+                                        resolveConflict('Local (MacBook Pro)')
+                                    "
+                                >
+                                    Keep Local
+                                </button>
+                                <button
+                                    class="btn-conflict-option"
+                                    onclick="resolveConflict('Remote Store')"
+                                >
+                                    Keep Store
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 4. Active Drives Stack (Card per Drive, Storage Ring, Click opens Finder) -->
+                        <div class="section-label">
+                            <span>Drives</span>
+                        </div>
+
+                        <div class="drives-stack">
+                            <!-- Drive 1 -->
+                            <div
+                                class="drive-card"
+                                onclick="
+                                    openDriveFolder(
+                                        'default',
+                                        '~/Documents/PhanerosSync',
+                                    )
+                                "
+                            >
+                                <span class="open-folder-prompt">Finder ↗</span>
+                                <div class="drive-info">
+                                    <div class="drive-name-row">
+                                        <span class="drive-name">default</span>
+                                    </div>
+                                    <div class="drive-path">
+                                        ~/Documents/PhanerosSync
+                                    </div>
+                                    <div class="drive-sync-time" id="d1-time">
+                                        <svg
+                                            width="10"
+                                            height="10"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="3"
+                                        >
+                                            <polyline points="20 6 9 17 4 12" />
+                                        </svg>
+                                        <span>Last synced 2m ago</span>
+                                    </div>
+                                </div>
+                                <div class="drive-ring-box">
+                                    <div
+                                        class="mini-ring"
+                                        style="
+                                            background: conic-gradient(
+                                                var(--primary) 42%,
+                                                var(--muted) 0
+                                            );
+                                        "
+                                    >
+                                        <div class="mini-ring-inner">42%</div>
+                                    </div>
+                                    <span class="drive-capacity-text"
+                                        >42.8 / 100 GB</span
+                                    >
+                                </div>
+                            </div>
+
+                            <!-- Drive 2 -->
+                            <div
+                                class="drive-card"
+                                onclick="
+                                    openDriveFolder(
+                                        'code-vault',
+                                        '~/Developer/PhanerosProjects',
+                                    )
+                                "
+                            >
+                                <span class="open-folder-prompt">Finder ↗</span>
+                                <div class="drive-info">
+                                    <div class="drive-name-row">
+                                        <span class="drive-name"
+                                            >code-vault</span
+                                        >
+                                    </div>
+                                    <div class="drive-path">
+                                        ~/Developer/PhanerosProjects
+                                    </div>
+                                    <div class="drive-sync-time" id="d2-time">
+                                        <svg
+                                            width="10"
+                                            height="10"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="3"
+                                        >
+                                            <polyline points="20 6 9 17 4 12" />
+                                        </svg>
+                                        <span>Last synced 14m ago</span>
+                                    </div>
+                                </div>
+                                <div class="drive-ring-box">
+                                    <div
+                                        class="mini-ring"
+                                        style="
+                                            background: conic-gradient(
+                                                var(--primary) 24%,
+                                                var(--muted) 0
+                                            );
+                                        "
+                                    >
+                                        <div class="mini-ring-inner">24%</div>
+                                    </div>
+                                    <span class="drive-capacity-text"
+                                        >12.0 / 50 GB</span
+                                    >
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 5. Recent Activity Section (File extension badges, no emojis) -->
+                        <div class="activity-section" id="activitySection">
+                            <div class="section-label" style="margin-top: 16px">
+                                <span>Recent File Activity</span>
+                                <span
+                                    style="
+                                        font-size: 0.65rem;
+                                        color: var(--primary);
+                                    "
+                                    >Live Stream</span
+                                >
+                            </div>
+
+                            <div class="activity-list">
+                                <div class="activity-item">
+                                    <div class="activity-left">
+                                        <span class="file-ext-badge">MD</span>
+                                        <span class="activity-name"
+                                            >sync-protocol</span
+                                        >
+                                    </div>
+                                    <span class="activity-time">2s ago</span>
+                                </div>
+                                <div class="activity-item">
+                                    <div class="activity-left">
+                                        <span class="file-ext-badge">RS</span>
+                                        <span class="activity-name"
+                                            >syncer</span
+                                        >
+                                    </div>
+                                    <span class="activity-time">1m ago</span>
+                                </div>
+                                <div class="activity-item">
+                                    <div class="activity-left">
+                                        <span class="file-ext-badge">DB</span>
+                                        <span class="activity-name"
+                                            >phaneros</span
+                                        >
+                                    </div>
+                                    <span class="activity-time">4m ago</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: PRODUCT CASE & UX RATIONALE PANEL -->
+            <div class="doc-panel">
+                <div class="doc-title">Product Case & UX Refinements</div>
+
+                <div class="case-box">
+                    <h4>1. Background & Depth Elevation</h4>
+                    <ul class="case-list">
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Continuous Dotted Paper:</strong> The
+                            background texture extends smoothly through the top
+                            header without blocky white header cards.
+                        </li>
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Card Drop Shadows:</strong> Applied
+                            multi-layered elevation shadows (`box-shadow: 0 12px
+                            28px -4px rgba(0,0,0,0.06)`) to give floating depth
+                            over the dotted canvas.
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="case-box">
+                    <h4>2. Sync Health & Header Simplification</h4>
+                    <ul class="case-list">
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Green Tick Badge:</strong> Replaced
+                            redundant 100% dial with a crisp green checkmark
+                            (`✓`) when up to date.
+                        </li>
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Pill Removal:</strong> Removed status pill
+                            badge from top header to eliminate visual
+                            redundancy.
+                        </li>
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Header Controls:</strong> Moved app launcher
+                            (`↗`) and preferences (`⚙`) to top-right header
+                            icons. Removed bottom action bar completely.
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="case-box">
+                    <h4>3. Per-Drive Card UX (Folder Launcher)</h4>
+                    <ul class="case-list">
+                        <li>
+                            <span class="case-bullet">▸</span> Removed drive tab
+                            pills. Each configured drive gets a dedicated card.
+                        </li>
+                        <li>
+                            <span class="case-bullet">▸</span> Each card
+                            includes a mini ring gauge (`42% used`), storage
+                            capacity text, and real-time status ("Last synced 2m
+                            ago").
+                        </li>
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Clicking any drive card</strong> opens its
+                            local path in Finder (`~/Documents/PhanerosSync`).
+                            Hovering reveals a prompt.
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="case-box">
+                    <h4>4. The Product Case for Recent Activity</h4>
+                    <p style="color: #cbd5e1; font-size: 0.85rem">
+                        <strong
+                            >Should Recent Activity be in the Tray UI?</strong
+                        >
+                    </p>
+                    <ul class="case-list" style="margin-top: 6px">
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Arguments FOR keeping it:</strong> Answers
+                            <em>"Which exact file just saved?"</em>. Provides
+                            immediate audit reassurance after saving in an
+                            editor without launching Finder.
+                        </li>
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Arguments FOR removing it:</strong> Drive
+                            cards already show overall sync health + "Last
+                            synced 2m ago". Removing recent activity reduces
+                            total tray height by 35%.
+                        </li>
+                        <li>
+                            <span class="case-bullet">▸</span>
+                            <strong>Recommendation:</strong> Use the "Toggle
+                            Recent Activity" button in the header toolbar above
+                            to evaluate both compact (Drive-only) and complete
+                            (Drive + Recent Activity) variations!
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </main>
+
+        <script>
+            function toggleTheme() {
+                document.getElementById("appBody").classList.toggle("dark");
+            }
+
+            function toggleActivitySection() {
+                const section = document.getElementById("activitySection");
+                if (section.style.display === "none") {
+                    section.style.display = "block";
+                } else {
+                    section.style.display = "none";
+                }
+            }
+
+            function openDriveFolder(name, path) {
+                alert(
+                    `Opening local file explorer for drive "${name}" at ${path}`,
+                );
+            }
+
+            function setSimState(state) {
+                const card = document.getElementById("heroCard");
+                const title = document.getElementById("heroTitle");
+                const sub = document.getElementById("heroSub");
+                const badge = document.getElementById("heroBadge");
+                const d1Time = document.getElementById("d1-time");
+                const conflictBanner =
+                    document.getElementById("conflictBanner");
+
+                if (
+                    !card ||
+                    !title ||
+                    !sub ||
+                    !badge ||
+                    !d1Time ||
+                    !conflictBanner
+                )
+                    return;
+
+                // Reset card classes & banners
+                card.className = "hero-health-card";
+                conflictBanner.style.display = "none";
+
+                if (state === "synced") {
+                    title.innerText = "Up to Date";
+                    sub.innerText = "All drives reconciled • 12s ago";
+                    badge.innerHTML = '<div class="tick-badge">✓</div>';
+                    d1Time.innerHTML =
+                        '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> <span>Last synced 2m ago</span>';
+                    d1Time.style.color = "var(--emerald-green)";
+                } else if (state === "syncing") {
+                    title.innerText = "Syncing 3 Files";
+                    sub.innerText = "1.4 MB/s • ~10s remaining";
+                    badge.innerHTML =
+                        '<div class="sync-ring"><div class="sync-ring-inner">68%</div></div>';
+                    d1Time.innerHTML =
+                        "<span>Syncing 2 files (1.2 MB/s)...</span>";
+                    d1Time.style.color = "var(--primary)";
+                } else if (state === "conflict") {
+                    card.className = "hero-health-card conflict-health-card";
+                    title.innerText = "1 File Conflict";
+                    sub.innerText = "Simultaneous edit in code-vault";
+                    badge.innerHTML = '<div class="warning-badge">!</div>';
+                    d1Time.innerHTML =
+                        '<span style="color:var(--amber-gold); font-weight:700;">! Conflict in roadmap.md</span>';
+                    conflictBanner.style.display = "flex";
+                }
+            }
+
+            function resolveConflict(choice) {
+                alert(`Conflict resolved! Kept ${choice} version.`);
+                setSimState("synced");
+            }
+        </script>
+    </body>
+</html>
