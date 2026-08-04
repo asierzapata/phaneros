@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phaneros — Experience Setup</title>
+  
+  <!-- Typography System -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Merriweather:ital,wght@0,400;0,700;1,300&display=swap" rel="stylesheet">
+  
+  <style>
+    /* OKLCH Design System Tokens (Main App Source of Truth) */
+    :root {
+      --background: oklch(0.99 0.002 240);
+      --background-dot: #cbd5e1;
+      --foreground: oklch(0.148 0.004 228.8);
+      --card: oklch(1 0 0);
+      --card-foreground: oklch(0.148 0.004 228.8);
+      --primary: oklch(0.5 0.134 242.749);
+      --primary-foreground: oklch(0.977 0.013 236.62);
+      --secondary: oklch(0.967 0.001 286.375);
+      --secondary-foreground: oklch(0.21 0.006 285.885);
+      --muted: oklch(0.963 0.002 197.1);
+      --muted-foreground: oklch(0.52 0.02 220);
+      --border: oklch(0.92 0.005 214.3);
+      --input: oklch(0.925 0.005 214.3);
+      --ring: oklch(0.723 0.014 214.4);
+      --radius: 0.75rem;
+
+      /* Semantic Colors */
+      --emerald-green: #059669;
+      --emerald-bg: #ecfdf5;
+      --emerald-border: #a7f3d0;
+
+      --amber-gold: #d97706;
+      --amber-bg: #fffbeb;
+      --amber-border: #fde68a;
+
+      --rose-red: #e11d48;
+      --rose-bg: #fff1f2;
+      --rose-border: #fecdd3;
+
+      /* Card & Modal Shadows */
+      --card-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.06), 0 4px 10px -2px rgba(0, 0, 0, 0.03);
+      --card-shadow-hover: 0 16px 36px -4px rgba(0, 0, 0, 0.1), 0 6px 14px -2px rgba(0, 0, 0, 0.05);
+
+      --point-color: #2563eb;
+    }
+
+    body.dark {
+      --background: oklch(0.148 0.004 228.8);
+      --background-dot: rgba(255, 255, 255, 0.12);
+      --foreground: oklch(0.987 0.002 197.1);
+      --card: oklch(0.218 0.008 223.9);
+      --card-foreground: oklch(0.987 0.002 197.1);
+      --secondary: oklch(0.274 0.006 286.033);
+      --secondary-foreground: oklch(0.985 0 0);
+      --muted: oklch(0.275 0.011 216.9);
+      --muted-foreground: oklch(0.723 0.014 214.4);
+      --border: oklch(1 0 0 / 12%);
+      --input: oklch(1 0 0 / 18%);
+
+      --emerald-green: #34d399;
+      --emerald-bg: rgba(16, 185, 129, 0.14);
+      --emerald-border: rgba(16, 185, 129, 0.35);
+
+      --amber-gold: #fbbf24;
+      --amber-bg: rgba(245, 158, 11, 0.14);
+      --amber-border: rgba(245, 158, 11, 0.35);
+
+      --rose-red: #fb7185;
+      --rose-bg: rgba(244, 63, 94, 0.14);
+      --rose-border: rgba(244, 63, 94, 0.35);
+
+      --card-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+      --card-shadow-hover: 0 18px 40px rgba(0, 0, 0, 0.65);
+
+      --point-color: #60a5fa;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--background);
+      background-image: radial-gradient(var(--background-dot) 0.85px, transparent 0.85px);
+      background-size: 16px 16px;
+      color: var(--foreground);
+      min-height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .icon-svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    /* Top Header Bar */
+    .top-header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 72px;
+      padding: 0 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 50;
+    }
+
+    .brand-mark {
+      font-family: 'Merriweather', serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--foreground);
+    }
+
+    .art-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--muted-foreground);
+      background-color: var(--card);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      color: var(--foreground);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: var(--card-shadow);
+    }
+
+    .icon-btn:hover {
+      background-color: var(--secondary);
+      transform: translateY(-1px);
+    }
+
+    /* FULL-BLEED SPLIT LAYOUT */
+    .full-viewport {
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      position: relative;
+    }
+
+    /* LEFT COLUMN — GUIDED CONTENT */
+    .left-col {
+      padding: 96px 72px 60px 72px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      z-index: 10;
+    }
+
+    .progress-line-track {
+      width: 100%;
+      height: 4px;
+      background-color: var(--border);
+      margin-bottom: 24px;
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+
+    .progress-line-fill {
+      height: 100%;
+      width: 20%;
+      background-color: var(--primary);
+      transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .step-content {
+      display: none;
+      flex-direction: column;
+      gap: 24px;
+      opacity: 0;
+      transform: translateY(14px);
+    }
+
+    .step-content.active {
+      display: flex;
+      animation: stepFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes stepFadeIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .step-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--primary);
+    }
+
+    .headline {
+      font-family: 'Merriweather', serif;
+      font-size: 2.1rem;
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+    }
+
+    .subheadline {
+      font-size: 0.95rem;
+      color: var(--muted-foreground);
+      line-height: 1.6;
+      margin-top: 2px;
+    }
+
+    .selection-group {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* MATCHING MAIN APP CARD STYLING */
+    .selection-row {
+      padding: 18px 22px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      box-shadow: var(--card-shadow);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .selection-row:hover {
+      box-shadow: var(--card-shadow-hover);
+      border-color: var(--primary);
+    }
+
+    .selection-row.selected {
+      border-color: var(--primary);
+      background-color: var(--secondary);
+      box-shadow: 0 0 0 1px var(--primary), var(--card-shadow);
+    }
+
+    .selection-title {
+      font-weight: 700;
+      font-size: 1.02rem;
+      color: var(--foreground);
+    }
+
+    .selection-desc {
+      font-size: 0.83rem;
+      color: var(--muted-foreground);
+      margin-top: 2px;
+    }
+
+    .folder-row {
+      padding: 16px 20px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      box-shadow: var(--card-shadow);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .folder-row:hover {
+      box-shadow: var(--card-shadow-hover);
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      color: var(--foreground);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      outline: none;
+    }
+
+    .input-field:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--ring);
+    }
+
+    .config-panel {
+      margin-top: 12px;
+      padding: 18px 20px;
+      border-radius: var(--radius);
+      background-color: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .preset-chip {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+      background-color: var(--secondary);
+      color: var(--secondary-foreground);
+      cursor: pointer;
+    }
+
+    .preset-chip:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .delete-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted-foreground);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .delete-btn:hover {
+      background-color: var(--rose-bg);
+      color: var(--rose-red);
+      border-color: var(--rose-border);
+    }
+
+    .practice-container {
+      padding: 24px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 18px;
+    }
+
+    .practice-progress {
+      width: 100%;
+      height: 8px;
+      border-radius: 9999px;
+      background-color: var(--secondary);
+      overflow: hidden;
+      display: none;
+    }
+
+    .practice-progress-fill {
+      width: 0%;
+      height: 100%;
+      background-color: var(--primary);
+      transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .practice-success {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      color: var(--emerald-green);
+      font-weight: 700;
+      font-size: 0.88rem;
+    }
+
+    .nav-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* MATCHING MAIN APP BUTTON STYLING */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: var(--primary-foreground);
+      box-shadow: 0 2px 10px rgba(59, 130, 246, 0.25);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background-color: var(--secondary);
+      color: var(--secondary-foreground);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--muted);
+    }
+
+    /* Extension Badges & Tags */
+    .ext-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background-color: var(--secondary);
+      color: var(--secondary-foreground);
+      border: 1px solid var(--border);
+      text-transform: uppercase;
+    }
+
+    .tag-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 9999px;
+    }
+
+    .tag-green {
+      background-color: var(--emerald-bg);
+      color: var(--emerald-green);
+      border: 1px solid var(--emerald-border);
+    }
+
+    /* RIGHT COLUMN — SEMANTIC DOTTED ART CANVAS */
+    .right-col {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #point-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header Bar -->
+  <header class="top-header">
+    <span class="brand-mark">Phaneros</span>
+
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <button class="icon-btn" onclick="toggleDarkMode()" title="Toggle Theme">
+        <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="full-viewport">
+    
+    <!-- LEFT COLUMN: CONTENT & GUIDANCE -->
+    <div class="left-col">
+      
+      <div>
+        <!-- Top Track Bar -->
+        <div class="progress-line-track">
+          <div class="progress-line-fill" id="track-fill"></div>
+        </div>
+
+        <!-- STEP 1: WELCOME & PROMISE -->
+        <div class="step-content active" id="step-1">
+          <span class="step-tag">01 / Welcome</span>
+          <h1 class="headline">Never worry about syncing files again.</h1>
+          <p class="subheadline">
+            Phaneros runs quietly on your Mac, keeping your files safe, encrypted, and automatically updated in the background.
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px; font-weight: 600;">
+              <svg class="icon-svg" style="color: var(--emerald-green);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span>Local-First: Your files live safely on your local disk.</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; font-weight: 600;">
+              <svg class="icon-svg" style="color: var(--emerald-green);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span>End-to-End Encrypted: Only you hold the encryption key.</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; font-weight: 600;">
+              <svg class="icon-svg" style="color: var(--emerald-green);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span>Zero Stress: Automatic background sync without manual uploads.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 2: STORAGE SELECTION -->
+        <div class="step-content" id="step-2">
+          <span class="step-tag">02 / Destination</span>
+          <h1 class="headline">Where do you want to keep your backups?</h1>
+          <p class="subheadline">
+            Select managed zero-config cloud storage or connect your self-hosted server instance.
+          </p>
+
+          <div class="selection-group">
+            <!-- Option 1: Managed Cloud -->
+            <div>
+              <div class="selection-row selected" id="opt-saas" onclick="pickStorage('saas')">
+                <div>
+                  <div class="selection-title">Phaneros Managed Cloud</div>
+                  <div class="selection-desc">Zero configuration required. Encrypted storage with 7-day free trial ($4/mo).</div>
+                </div>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 700; color: var(--emerald-green); background-color: var(--emerald-bg); border: 1px solid var(--emerald-border); padding: 3px 10px; border-radius: 9999px;">RECOMMENDED</span>
+              </div>
+
+              <!-- Cloud Auth Dynamic Subpanel -->
+              <div class="config-panel" id="panel-saas">
+                <div id="cloud-auth-disconnected">
+                  <div style="font-size: 0.88rem; color: var(--muted-foreground); margin-bottom: 8px;">
+                    Sign in to link your Mac with your Phaneros Cloud storage vault.
+                  </div>
+                  <button class="btn btn-primary" id="btn-cloud-signin" onclick="startCloudSignIn()" style="padding: 10px 20px; font-size: 0.88rem;">
+                    <svg class="icon-svg" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
+                    <span id="cloud-signin-btn-text">Sign in with Phaneros Cloud</span>
+                  </button>
+                </div>
+
+                <div id="cloud-auth-connected" style="display: none; align-items: center; justify-content: space-between;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 36px; height: 36px; border-radius: 50%; background-color: var(--emerald-bg); border: 1px solid var(--emerald-border); display: flex; align-items: center; justify-content: center; color: var(--emerald-green);">
+                      <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div>
+                      <div style="font-weight: 700; font-size: 0.92rem; color: var(--emerald-green);">● Account Connected</div>
+                      <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--muted-foreground);" id="cloud-user-email">alex@phaneros.io • Standard Cloud Vault (50 GB)</div>
+                    </div>
+                  </div>
+                  <button class="btn btn-secondary" onclick="disconnectCloud()" style="padding: 6px 14px; font-size: 0.78rem;">Disconnect</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Option 2: Self-Hosted Server -->
+            <div>
+              <div class="selection-row" id="opt-selfhosted" onclick="pickStorage('selfhosted')">
+                <div>
+                  <div class="selection-title">Self-Hosted Server</div>
+                  <div class="selection-desc">Connect to your own private server endpoint or home NAS instance.</div>
+                </div>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 700; color: var(--muted-foreground);">OPEN SOURCE</span>
+              </div>
+
+              <!-- Self-Hosted Config Dynamic Subpanel -->
+              <div class="config-panel" id="panel-selfhosted" style="display: none;">
+                <div>
+                  <label style="font-size: 0.82rem; font-weight: 600; color: var(--muted-foreground); display: block; margin-bottom: 6px;">Server Endpoint URL</label>
+                  <input type="text" class="input-field" id="selfhosted-url" value="https://sync.mycompany.com:8443" placeholder="https://sync.yourdomain.com:8443" onchange="updateSelfHostedUrl(this.value)">
+                </div>
+
+                <div>
+                  <label style="font-size: 0.82rem; font-weight: 600; color: var(--muted-foreground); display: block; margin-bottom: 6px;">API Access Token / Key</label>
+                  <input type="password" class="input-field" id="selfhosted-token" value="ph_live_9f83a21bc98d" placeholder="Paste API token">
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+                  <button class="btn btn-secondary" id="btn-verify-selfhosted" onclick="verifySelfHosted()" style="padding: 8px 18px; font-size: 0.84rem;">
+                    <span>Verify Connection</span>
+                  </button>
+                  <span id="selfhosted-status-pill" style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--emerald-green); font-weight: 600; display: none;">✓ Endpoint Verified</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 3: FOLDER SELECTION -->
+        <div class="step-content" id="step-3">
+          <span class="step-tag">03 / Folder Vaults</span>
+          <h1 class="headline">Select folders to keep synchronized</h1>
+          <p class="subheadline">
+            Phaneros watches these folders on your Mac and keeps every change in sync in real time.
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <!-- Folder List Container -->
+            <div id="folder-list-container" style="display: flex; flex-direction: column; gap: 10px;">
+              <!-- Rendered dynamically by JS -->
+            </div>
+
+            <!-- Add Folder Control Panel -->
+            <div class="config-panel" style="gap: 10px;">
+              <div style="font-weight: 700; font-size: 0.9rem;">Add New Folder Vault</div>
+              
+              <div style="display: flex; gap: 8px;">
+                <input type="text" class="input-field" id="new-folder-input" placeholder="~/Desktop/MyVault or click preset..." style="flex: 1;">
+                <button class="btn btn-primary" onclick="addCustomFolder()" style="padding: 10px 18px; font-size: 0.85rem;">Add Folder</button>
+              </div>
+
+              <!-- Quick Presets -->
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px;">
+                <span style="font-size: 0.78rem; color: var(--muted-foreground);">Quick Add:</span>
+                <button class="preset-chip" onclick="addPresetFolder('~/Documents')">+ ~/Documents</button>
+                <button class="preset-chip" onclick="addPresetFolder('~/Desktop')">+ ~/Desktop</button>
+                <button class="preset-chip" onclick="addPresetFolder('~/Developer')">+ ~/Developer</button>
+                <button class="preset-chip" onclick="addPresetFolder('~/Pictures')">+ ~/Pictures</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 4: WISPR FLOW PRACTICE TEST -->
+        <div class="step-content" id="step-4">
+          <span class="step-tag">04 / Test Drive</span>
+          <h1 class="headline">Try it right now: Test your connection</h1>
+          <p class="subheadline">
+            Click the button below to test a background sync payload before completing setup.
+          </p>
+
+          <div class="practice-container">
+            <p id="practice-status-text" style="font-weight: 600; font-size: 0.95rem;">Click "Test Background Sync" to verify connection.</p>
+            
+            <div class="practice-progress" id="practice-bar">
+              <div class="practice-progress-fill" id="practice-fill"></div>
+            </div>
+
+            <div class="practice-success" id="practice-success">
+              <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span>Connection Verified & Payload Synced!</span>
+            </div>
+
+            <button class="btn btn-primary" id="btn-practice" onclick="runPracticeTest()">
+              <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              <span>Test Background Sync</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP 5: FINAL LAUNCH -->
+        <div class="step-content" id="step-5">
+          <span class="step-tag">05 / Manifest Vault</span>
+          <h1 class="headline">Setup Complete</h1>
+          <p class="subheadline">
+            Phaneros is active in your Mac top menu bar. Your files are automatically protected.
+          </p>
+
+          <div style="padding: 22px 24px; border-radius: var(--radius); background-color: var(--card); border: 1px solid var(--border); box-shadow: var(--card-shadow); display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+              <span style="color: var(--muted-foreground);">Storage Destination:</span>
+              <strong id="summary-target">Phaneros Managed Cloud</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+              <span style="color: var(--muted-foreground);">Synced Folder Vaults:</span>
+              <strong id="summary-folder-count">2 Folders (`default`, `code-vault`)</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
+              <span style="color: var(--muted-foreground);">Connection Status:</span>
+              <span style="color: var(--emerald-green); font-weight: 700;">● Online & Verified</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- FOOTER NAV -->
+      <footer class="nav-footer">
+        <button class="btn btn-secondary" id="btn-back" onclick="navigateStep(-1)" style="visibility: hidden;">
+          <span>Back</span>
+        </button>
+
+        <button class="btn btn-primary" id="btn-next" onclick="navigateStep(1)">
+          <span>Continue</span>
+          <svg class="icon-svg" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </button>
+      </footer>
+
+    </div>
+
+    <!-- RIGHT COLUMN — SEMANTIC DOTTED ART CANVAS -->
+    <div class="right-col">
+      <canvas id="point-canvas"></canvas>
+    </div>
+
+  </main>
+
+  <script>
+    let currentStep = 1;
+    let selectedStorage = 'saas';
+    let isTesting = false;
+    let cloudIsConnected = false;
+    let selfhostedUrl = 'https://sync.mycompany.com:8443';
+    let activeFolders = [
+      { id: 1, name: 'default', path: '~/Documents/PhanerosSync' },
+      { id: 2, name: 'code-vault', path: '~/Projects/Vault' }
+    ];
+
+    // SEMANTIC DOTTED ART ENGINE (HTML5 CANVAS)
+    const canvas = document.getElementById('point-canvas');
+    const ctx = canvas.getContext('2d');
+    let width = 0, height = 0;
+    let rotAngle = 0;
+
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      width = canvas.width;
+      height = canvas.height;
+    }
+
+    // GENERATE SEMANTICALLY ALIGNED DOTTED ART FOR EACH STEP
+    function generateSemanticPoints(step) {
+      const pts = [];
+
+      if (step === 1) {
+        // STEP 1: 3D MAC DISK PLATTER & FLOATING ENCRYPTED LOCK VAULT
+        [45, 65].forEach((yPos, layerIdx) => {
+          for (let r = 15; r <= 110; r += 16) {
+            const dotsOnRing = Math.max(6, Math.floor(r / 2.2));
+            for (let i = 0; i < dotsOnRing; i++) {
+              const a = (i / dotsOnRing) * Math.PI * 2 + (layerIdx === 0 ? rotAngle * 0.5 : -rotAngle * 0.5);
+              pts.push({
+                x: Math.cos(a) * r,
+                y: yPos + Math.sin(a * 3) * 2,
+                z: Math.sin(a) * r,
+                size: (r === 110 || r === 15) ? 2.0 : 1.4,
+                colorType: 'default'
+              });
+            }
+          }
+        });
+
+        for (let t = 0; t <= 1; t += 0.08) {
+          const armX = -90 + t * 75;
+          const armZ = -50 + t * 45;
+          pts.push({ x: armX, y: 35, z: armZ, size: 2.2, colorType: 'accent' });
+        }
+
+        const lockYOffset = -45 + Math.sin(rotAngle * 2) * 6;
+        for (let a = Math.PI; a <= Math.PI * 2; a += 0.25) {
+          pts.push({
+            x: Math.cos(a) * 28,
+            y: lockYOffset - 30 + Math.sin(a) * 22,
+            z: Math.sin(a) * 12,
+            size: 2.4,
+            colorType: 'accent'
+          });
+          pts.push({
+            x: Math.cos(a) * 28,
+            y: lockYOffset - 30 + Math.sin(a) * 22,
+            z: -Math.sin(a) * 12,
+            size: 2.4,
+            colorType: 'accent'
+          });
+        }
+        for (let bx = -32; bx <= 32; bx += 10) {
+          for (let by = -20; by <= 20; by += 10) {
+            for (let bz = -14; bz <= 14; bz += 14) {
+              if (Math.abs(bx) === 32 || Math.abs(by) === 20 || Math.abs(bz) === 14) {
+                pts.push({
+                  x: bx,
+                  y: lockYOffset + by,
+                  z: bz,
+                  size: 2.0,
+                  colorType: 'accent'
+                });
+              }
+            }
+          }
+        }
+        pts.push({ x: 0, y: lockYOffset, z: 16, size: 4.0, colorType: 'green' });
+
+      } else if (step === 2) {
+        // STEP 2: 3D DOTTED HALFTONE GLOBE & SATELLITE DESTINATION NODES
+        const radius = 120;
+        for (let lat = -80; lat <= 80; lat += 10) {
+          const r = radius * Math.cos(lat * Math.PI / 180);
+          const y = radius * Math.sin(lat * Math.PI / 180);
+          for (let lon = 0; lon < 360; lon += 14) {
+            pts.push({
+              x: r * Math.cos(lon * Math.PI / 180),
+              y,
+              z: r * Math.sin(lon * Math.PI / 180),
+              size: 1.8,
+              colorType: 'default'
+            });
+          }
+        }
+        for (let a = 0; a < Math.PI * 2; a += 0.2) {
+          const isNode = (Math.floor(a * 10) % 12 === 0);
+          pts.push({
+            x: Math.cos(a) * 155,
+            y: Math.sin(a) * 45,
+            z: Math.sin(a) * 155,
+            size: isNode ? 3.5 : 2.0,
+            colorType: isNode ? 'green' : 'accent'
+          });
+        }
+
+      } else if (step === 3) {
+        // STEP 3: 3D FOLDER SCANNER NETWORK & DYNAMIC FILE STREAMS
+        const folderCount = Math.max(1, activeFolders.length);
+        activeFolders.forEach((f, idx) => {
+          const zOffset = -50 + idx * 35;
+          const yOffset = -35 + idx * 25;
+          const xOffset = -20 + (idx % 2 === 0 ? -10 : 15);
+          const fWidth = 100, fHeight = 60;
+          for (let x = -fWidth/2; x <= fWidth/2; x += 10) {
+            for (let y = -fHeight/2; y <= fHeight/2; y += 10) {
+              const isTab = (y < -fHeight/2 + 10 && x < -fWidth/6);
+              const isEdge = (Math.abs(x) >= fWidth/2 - 5 || Math.abs(y) >= fHeight/2 - 5 || isTab);
+              if (isEdge) {
+                pts.push({
+                  x: x + xOffset,
+                  y: y + yOffset,
+                  z: zOffset,
+                  size: 2.0,
+                  colorType: 'default'
+                });
+              }
+            }
+          }
+        });
+
+        const scanY = Math.sin(rotAngle * 2.2) * 85;
+        for (let a = 0; a < Math.PI * 2; a += 0.18) {
+          pts.push({
+            x: Math.cos(a) * 125,
+            y: scanY,
+            z: Math.sin(a) * 80,
+            size: 2.5,
+            colorType: 'green'
+          });
+        }
+
+        for (let i = 0; i < 24; i++) {
+          const streamPhase = (rotAngle * 40 + i * 15) % 160;
+          const streamY = 80 - streamPhase;
+          const streamX = Math.sin(i * 1.5) * 40;
+          const streamZ = Math.cos(i * 1.5) * 40;
+          pts.push({
+            x: streamX,
+            y: streamY,
+            z: streamZ,
+            size: 2.2,
+            colorType: 'accent'
+          });
+        }
+
+      } else if (step === 4) {
+        // STEP 4: 3D DOTTED TOPOGRAPHIC HEIGHTMAP & RIPPLE SURGE
+        const range = 120;
+        const stepSize = 14;
+        for (let x = -range; x <= range; x += stepSize) {
+          for (let z = -range; z <= range; z += stepSize) {
+            const dist = Math.sqrt(x*x + z*z);
+            const waveAmp = isTesting ? 48 : 24;
+            const y = Math.sin((dist*0.06) - rotAngle*3.5) * waveAmp;
+            pts.push({
+              x, y, z,
+              size: (dist < 40 && isTesting) ? 3.0 : 1.8,
+              colorType: isTesting ? 'green' : 'default'
+            });
+          }
+        }
+
+      } else if (step === 5) {
+        // STEP 5: 3D INFINITY VAULT & HARMONIOUS ORBIT RINGS
+        for (let a = 0; a <= Math.PI * 2; a += 0.3) {
+          pts.push({
+            x: Math.cos(a) * 36,
+            y: Math.sin(a) * 36,
+            z: Math.sin(a * 2) * 10,
+            size: 2.2,
+            colorType: 'green'
+          });
+        }
+        pts.push({ x: 0, y: 0, z: 20, size: 4.5, colorType: 'green' });
+
+        for (let t = 0; t < Math.PI * 2; t += 0.08) {
+          const denom = 1 + Math.sin(t) * Math.sin(t);
+          const infX = (140 * Math.cos(t)) / denom;
+          const infZ = (140 * Math.sin(t) * Math.cos(t)) / denom;
+          const infY = Math.sin(t * 2) * 22;
+          pts.push({
+            x: infX,
+            y: infY,
+            z: infZ,
+            size: 1.8,
+            colorType: 'default'
+          });
+        }
+
+        for (let i = 0; i < 16; i++) {
+          const loopT = (rotAngle * 2 + (i * Math.PI * 2) / 16) % (Math.PI * 2);
+          const denom = 1 + Math.sin(loopT) * Math.sin(loopT);
+          const pulseX = (140 * Math.cos(loopT)) / denom;
+          const pulseZ = (140 * Math.sin(loopT) * Math.cos(loopT)) / denom;
+          const pulseY = Math.sin(loopT * 2) * 22;
+          pts.push({
+            x: pulseX,
+            y: pulseY,
+            z: pulseZ,
+            size: 3.2,
+            colorType: 'green'
+          });
+        }
+
+        for (let a = 0; a < Math.PI * 2; a += 0.15) {
+          pts.push({
+            x: Math.cos(a) * 165,
+            y: Math.sin(a * 3) * 8,
+            z: Math.sin(a) * 165,
+            size: 1.4,
+            colorType: 'accent'
+          });
+        }
+      }
+
+      return pts;
+    }
+
+    function renderSemanticCanvas() {
+      ctx.clearRect(0, 0, width, height);
+      const cx = width / 2;
+      const cy = height / 2;
+      rotAngle += 0.0025;
+
+      const isDark = document.body.classList.contains('dark');
+      const baseBlue = isDark ? 'rgba(96, 165, 250, ' : 'rgba(37, 99, 235, ';
+      const greenAccent = isDark ? 'rgba(52, 211, 153, ' : 'rgba(5, 150, 105, ';
+      const purpleAccent = isDark ? 'rgba(192, 132, 252, ' : 'rgba(147, 51, 234, ';
+
+      const points = generateSemanticPoints(currentStep);
+
+      points.forEach(p => {
+        const cos = Math.cos(rotAngle);
+        const sin = Math.sin(rotAngle);
+        
+        let rx = p.x * cos - p.z * sin;
+        let rz = p.x * sin + p.z * cos;
+        let ry = p.y;
+
+        const scale = 320 / (320 + rz);
+        const screenX = cx + rx * scale;
+        const screenY = cy + ry * scale;
+        const alpha = Math.max(0.18, Math.min(0.95, (rz + 160) / 320));
+
+        let dotColor = baseBlue;
+        if (p.colorType === 'green' || isTesting || currentStep === 5) {
+          dotColor = greenAccent;
+        } else if (p.colorType === 'accent') {
+          dotColor = purpleAccent;
+        }
+
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, p.size * scale, 0, Math.PI * 2);
+        ctx.fillStyle = dotColor + alpha + ')';
+        ctx.fill();
+      });
+
+      requestAnimationFrame(renderSemanticCanvas);
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    setTimeout(resizeCanvas, 50);
+    requestAnimationFrame(renderSemanticCanvas);
+
+    function updateStepUI() {
+      const trackFill = document.getElementById('track-fill');
+
+      const percents = ['20%', '40%', '60%', '80%', '100%'];
+      trackFill.style.width = percents[currentStep - 1];
+
+      for (let i = 1; i <= 5; i++) {
+        document.getElementById('step-' + i).classList.remove('active');
+      }
+      document.getElementById('step-' + currentStep).classList.add('active');
+
+      const btnBack = document.getElementById('btn-back');
+      if (currentStep === 1) {
+        btnBack.style.visibility = 'hidden';
+      } else {
+        btnBack.style.visibility = 'visible';
+      }
+
+      const btnNext = document.getElementById('btn-next');
+      if (currentStep === 5) {
+        btnNext.innerHTML = '<span>Open Control Center ↗</span>';
+      } else {
+        btnNext.innerHTML = '<span>Continue</span> <svg class="icon-svg" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>';
+      }
+    }
+
+    function navigateStep(dir) {
+      if (dir === 1 && currentStep === 5) {
+        window.location.href = 'phaneros_main_app_v1.html';
+        return;
+      }
+      currentStep += dir;
+      if (currentStep < 1) currentStep = 1;
+      if (currentStep > 5) currentStep = 5;
+      updateStepUI();
+    }
+
+    // FOLDER VAULT MANAGEMENT
+    function renderFolderList() {
+      const container = document.getElementById('folder-list-container');
+      const summaryCount = document.getElementById('summary-folder-count');
+      if (summaryCount) {
+        summaryCount.textContent = `${activeFolders.length} Folders (${activeFolders.map(f => '`' + f.name + '`').join(', ') || 'None'})`;
+      }
+
+      if (activeFolders.length === 0) {
+        container.innerHTML = `
+          <div style="padding: 16px; border-radius: 12px; border: 1px dashed var(--border); text-align: center; color: var(--muted-foreground); font-size: 0.88rem;">
+            No folder vaults selected. Click a preset below or type a custom path to add one.
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = activeFolders.map(f => `
+        <div class="folder-row" id="folder-row-${f.id}">
+          <div>
+            <div style="font-weight: 700; font-size: 0.96rem;">${f.name}</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--muted-foreground); margin-top: 2px;">${f.path}</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="color: var(--emerald-green); font-weight: 700; font-size: 0.82rem;">● Active</span>
+            <button class="delete-btn" onclick="removeFolder(${f.id})" title="Delete Folder Vault">
+              <svg class="icon-svg" style="width:16px; height:16px;" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function removeFolder(id) {
+      activeFolders = activeFolders.filter(f => f.id !== id);
+      renderFolderList();
+    }
+
+    function addPresetFolder(path) {
+      const folderName = path.replace('~/', '').toLowerCase();
+      if (activeFolders.some(f => f.path === path)) return;
+      activeFolders.push({
+        id: Date.now(),
+        name: folderName,
+        path: path
+      });
+      renderFolderList();
+    }
+
+    function addCustomFolder() {
+      const input = document.getElementById('new-folder-input');
+      const val = input.value.trim();
+      if (!val) return;
+      const parts = val.split('/');
+      const name = parts[parts.length - 1] || 'custom-vault';
+      activeFolders.push({
+        id: Date.now(),
+        name: name,
+        path: val
+      });
+      input.value = '';
+      renderFolderList();
+    }
+
+    // STORAGE SELECTION & CONFIGURATION
+    function pickStorage(type) {
+      selectedStorage = type;
+      const saasRow = document.getElementById('opt-saas');
+      const selfRow = document.getElementById('opt-selfhosted');
+      const panelSaas = document.getElementById('panel-saas');
+      const panelSelf = document.getElementById('panel-selfhosted');
+      const summary = document.getElementById('summary-target');
+
+      if (type === 'saas') {
+        saasRow.classList.add('selected');
+        selfRow.classList.remove('selected');
+        panelSaas.style.display = 'flex';
+        panelSelf.style.display = 'none';
+        summary.textContent = cloudIsConnected ? 'Phaneros Managed Cloud (alex@phaneros.io)' : 'Phaneros Managed Cloud';
+      } else {
+        selfRow.classList.add('selected');
+        saasRow.classList.remove('selected');
+        panelSelf.style.display = 'flex';
+        panelSaas.style.display = 'none';
+        summary.textContent = `Self-Hosted Server (${selfhostedUrl})`;
+      }
+    }
+
+    function startCloudSignIn() {
+      const btnText = document.getElementById('cloud-signin-btn-text');
+      btnText.textContent = 'Opening browser authorization...';
+
+      setTimeout(() => {
+        cloudIsConnected = true;
+        document.getElementById('cloud-auth-disconnected').style.display = 'none';
+        document.getElementById('cloud-auth-connected').style.display = 'flex';
+        document.getElementById('summary-target').textContent = 'Phaneros Managed Cloud (alex@phaneros.io)';
+      }, 1200);
+    }
+
+    function disconnectCloud() {
+      cloudIsConnected = false;
+      document.getElementById('cloud-auth-connected').style.display = 'none';
+      document.getElementById('cloud-auth-disconnected').style.display = 'block';
+      document.getElementById('cloud-signin-btn-text').textContent = 'Sign in with Phaneros Cloud';
+      document.getElementById('summary-target').textContent = 'Phaneros Managed Cloud';
+    }
+
+    function updateSelfHostedUrl(val) {
+      selfhostedUrl = val || 'https://sync.mycompany.com:8443';
+      if (selectedStorage === 'selfhosted') {
+        document.getElementById('summary-target').textContent = `Self-Hosted Server (${selfhostedUrl})`;
+      }
+    }
+
+    function verifySelfHosted() {
+      const btn = document.getElementById('btn-verify-selfhosted');
+      const pill = document.getElementById('selfhosted-status-pill');
+      btn.innerHTML = '<span>Verifying...</span>';
+      
+      setTimeout(() => {
+        btn.innerHTML = '<span>Verify Connection</span>';
+        pill.style.display = 'inline';
+      }, 900);
+    }
+
+    function runPracticeTest() {
+      const btn = document.getElementById('btn-practice');
+      const bar = document.getElementById('practice-bar');
+      const fill = document.getElementById('practice-fill');
+      const status = document.getElementById('practice-status-text');
+      const success = document.getElementById('practice-success');
+
+      btn.style.display = 'none';
+      bar.style.display = 'block';
+      status.textContent = 'Testing connection and syncing background payload...';
+      isTesting = true;
+
+      setTimeout(() => {
+        fill.style.width = '100%';
+      }, 100);
+
+      setTimeout(() => {
+        bar.style.display = 'none';
+        success.style.display = 'inline-flex';
+        status.textContent = 'Sync test successful! Your connection is verified.';
+      }, 1400);
+    }
+
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark');
+    }
+
+    // Initialize Folder List on load
+    renderFolderList();
+  </script>
+</body>
+</html>
