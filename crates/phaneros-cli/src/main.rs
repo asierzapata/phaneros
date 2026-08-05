@@ -59,6 +59,28 @@ enum Commands {
         #[arg(long)]
         disabled: bool,
     },
+    /// Guided setup: install and start the daemon, then configure and start
+    /// a drive. Prompts for anything not passed as a flag.
+    Setup {
+        /// Local directory to sync. Prompted for if omitted.
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Base URL of the remote phaneros-store. Prompted for if omitted.
+        #[arg(long)]
+        store_url: Option<String>,
+        /// Bearer token for authenticating with the remote store. Prompted for if omitted.
+        #[arg(long)]
+        token: Option<String>,
+        /// Identifier for the new drive. Defaults to the path's directory name.
+        #[arg(long)]
+        drive_id: Option<String>,
+        /// Config file to pass through to `phanerosd --config`.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Add the drive without starting it.
+        #[arg(long)]
+        disabled: bool,
+    },
     /// Remove a drive from the daemon's configuration.
     Remove { drive_id: String },
     /// Force an immediate sync pass for a drive.
@@ -154,16 +176,18 @@ async fn main() {
             token,
             disabled,
         } => {
-            let params = AddDriveParams {
-                drive_id: drive_id.clone(),
-                path: path.to_string_lossy().to_string(),
-                token,
-                store_url,
-                enabled: !disabled,
-            };
+            let params = build_add_drive_params(drive_id.clone(), path, store_url, token, disabled);
             call(&socket_path, Request::DrivesAdd(params)).await;
             println!("Added drive '{}'.", drive_id);
         }
+        Commands::Setup {
+            path,
+            store_url,
+            token,
+            drive_id,
+            config,
+            disabled,
+        } => setup(&socket_path, path, store_url, token, drive_id, config, disabled).await,
         Commands::Remove { drive_id } => {
             call(&socket_path, Request::DrivesRemove(DriveIdParams { drive_id: drive_id.clone() })).await;
             println!("Removed drive '{}'.", drive_id);
@@ -240,6 +264,152 @@ async fn daemon_status(socket_path: &Path) {
         Ok(false) => println!("Login item: not installed"),
         Err(err) => println!("Login item: unknown ({})", err),
     }
+}
+
+fn build_add_drive_params(
+    drive_id: String,
+    path: PathBuf,
+    store_url: Option<String>,
+    token: Option<String>,
+    disabled: bool,
+) -> AddDriveParams {
+    AddDriveParams {
+        drive_id,
+        path: path.to_string_lossy().to_string(),
+        token,
+        store_url,
+        enabled: !disabled,
+    }
+}
+
+/// Prompts on stdout/stdin for a value, falling back to `default` (if any)
+/// on an empty line. Returns `None` if no default was given and the user
+/// entered nothing.
+fn prompt(label: &str, default: Option<&str>) -> Option<String> {
+    use std::io::Write;
+
+    match default {
+        Some(default) => print!("{} [{}]: ", label, default),
+        None => print!("{}: ", label),
+    }
+    let _ = std::io::stdout().flush();
+
+    let mut input = String::new();
+    if std::io::stdin().read_line(&mut input).is_err() {
+        return default.map(str::to_string);
+    }
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        default.map(str::to_string)
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// Pings the daemon once without exiting the process on failure, so callers
+/// can decide how to react (e.g. `setup` deciding whether to spawn a new
+/// daemon or reuse an already-running one).
+async fn try_ping(socket_path: &Path) -> Option<PingResult> {
+    let mut client = IpcClient::connect(socket_path).await.ok()?;
+    let value = client.call(Request::DaemonPing).await.ok()?;
+    serde_json::from_value(value).ok()
+}
+
+/// Polls the daemon until it responds to a ping or the retry budget is
+/// exhausted. Used right after spawning `phanerosd`, since startup (socket
+/// bind, etc.) happens asynchronously relative to the spawned process.
+async fn wait_for_daemon(socket_path: &Path) -> Option<PingResult> {
+    for _ in 0..25 {
+        if let Some(ping) = try_ping(socket_path).await {
+            return Some(ping);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    None
+}
+
+async fn setup(
+    socket_path: &Path,
+    path: Option<PathBuf>,
+    store_url: Option<String>,
+    token: Option<String>,
+    drive_id: Option<String>,
+    config: Option<PathBuf>,
+    disabled: bool,
+) {
+    println!("=== Phaneros setup ===");
+
+    let ping = match try_ping(socket_path).await {
+        Some(ping) => {
+            println!("Daemon already running (pid {}).", ping.pid);
+            ping
+        }
+        None => {
+            #[cfg(target_os = "macos")]
+            match locate_daemon_binary() {
+                Ok(daemon_path) => match phaneros_daemon::launchd::install(&phaneros_daemon::launchd::LoginItemConfig {
+                    label: LOGIN_ITEM_LABEL.to_string(),
+                    daemon_path,
+                }) {
+                    Ok(()) => println!("Registered phanerosd to start at login."),
+                    Err(err) => println!("Warning: could not register login item: {}", err),
+                },
+                Err(err) => {
+                    eprintln!("{}", err);
+                    std::process::exit(1);
+                }
+            }
+
+            daemon_start(config).await;
+
+            match wait_for_daemon(socket_path).await {
+                Some(ping) => ping,
+                None => {
+                    eprintln!("phanerosd did not become reachable at {}.", socket_path.display());
+                    std::process::exit(1);
+                }
+            }
+        }
+    };
+    println!("phanerosd {} (pid {}) is reachable.", ping.version, ping.pid);
+
+    let path = match path {
+        Some(path) => path,
+        None => {
+            let default_path = dirs::home_dir()
+                .map(|home| home.join("Phaneros"))
+                .unwrap_or_else(|| PathBuf::from("~/Phaneros"));
+            let entered = prompt("Local directory to sync", Some(&default_path.to_string_lossy()));
+            PathBuf::from(entered.unwrap_or_else(|| default_path.to_string_lossy().to_string()))
+        }
+    };
+
+    let store_url = store_url.or_else(|| prompt("Store URL", Some("http://localhost:8080")));
+
+    let token = match token {
+        Some(token) => Some(token),
+        None => prompt("Bearer token for the store (leave blank if none)", Some("")),
+    }
+    .filter(|t| !t.is_empty());
+
+    let drive_id = drive_id.unwrap_or_else(|| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "default".to_string())
+    });
+
+    let params = build_add_drive_params(drive_id.clone(), path.clone(), store_url.clone(), token, disabled);
+    call(socket_path, Request::DrivesAdd(params)).await;
+
+    println!();
+    println!("=== Setup complete ===");
+    println!("Drive:      {}", drive_id);
+    println!("Path:       {}", path.display());
+    println!("Store URL:  {}", store_url.unwrap_or_else(|| "(daemon default)".to_string()));
+    println!("Started:    {}", !disabled);
+    println!();
+    println!("Run `phaneros status --drive-id {}` to check on it, or `phaneros watch` to follow sync events live.", drive_id);
 }
 
 /// Resolves `phanerosd` via `$PATH` only; the CLI is a plain binary with no
