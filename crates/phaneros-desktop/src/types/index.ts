@@ -68,6 +68,10 @@ export interface OnboardingState {
   serverUrl: string;
   serverToken: string;
   isConnected: boolean;
+  isTestingConnection: boolean;
+  connectionError: string | null;
+  isCompleting: boolean;
+  completionError: string | null;
   vaults: DriveVault[];
 }
 

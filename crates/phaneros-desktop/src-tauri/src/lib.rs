@@ -38,6 +38,7 @@ fn toggle_tray_window(app: &tauri::AppHandle, tray_rect: Option<tauri::Rect>) {
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
       commands::list_vaults,
       commands::get_telemetry,
@@ -46,6 +47,10 @@ pub fn run() {
       commands::list_conflicts,
       commands::get_conflict_diff,
       commands::resolve_conflict,
+      commands::daemon_ping,
+      commands::add_vault,
+      commands::load_onboarding_state,
+      commands::save_onboarding_state,
     ])
     .setup(|app| {
       let show_item = MenuItem::with_id(app, "show", "Open Phaneros", true, None::<&str>)?;
