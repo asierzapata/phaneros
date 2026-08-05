@@ -1,6 +1,13 @@
 import { OnboardingState } from '@/types';
 import { mockDrives } from './vaultMocks';
 
+const baseAsyncState = {
+  isTestingConnection: false,
+  connectionError: null,
+  isCompleting: false,
+  completionError: null,
+};
+
 export const mockOnboardingStep1: OnboardingState = {
   currentStep: 1,
   isCompleted: false,
@@ -9,6 +16,7 @@ export const mockOnboardingStep1: OnboardingState = {
   serverToken: '',
   isConnected: false,
   vaults: [],
+  ...baseAsyncState,
 };
 
 export const mockOnboardingStep2CloudConnected: OnboardingState = {
@@ -19,6 +27,7 @@ export const mockOnboardingStep2CloudConnected: OnboardingState = {
   serverToken: '',
   isConnected: true,
   vaults: [],
+  ...baseAsyncState,
 };
 
 export const mockOnboardingStep2SelfHosted: OnboardingState = {
@@ -29,6 +38,7 @@ export const mockOnboardingStep2SelfHosted: OnboardingState = {
   serverToken: 'sec_token_987654321',
   isConnected: true,
   vaults: [],
+  ...baseAsyncState,
 };
 
 export const mockOnboardingStep3VaultsSelected: OnboardingState = {
@@ -39,6 +49,7 @@ export const mockOnboardingStep3VaultsSelected: OnboardingState = {
   serverToken: '',
   isConnected: true,
   vaults: mockDrives,
+  ...baseAsyncState,
 };
 
 export const mockOnboardingStep4TestDrive: OnboardingState = {
@@ -49,6 +60,7 @@ export const mockOnboardingStep4TestDrive: OnboardingState = {
   serverToken: '',
   isConnected: true,
   vaults: mockDrives,
+  ...baseAsyncState,
 };
 
 export const mockOnboardingStep5Completed: OnboardingState = {
@@ -59,4 +71,5 @@ export const mockOnboardingStep5Completed: OnboardingState = {
   serverToken: '',
   isConnected: true,
   vaults: mockDrives,
+  ...baseAsyncState,
 };

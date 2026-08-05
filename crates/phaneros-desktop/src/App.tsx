@@ -48,7 +48,7 @@ export const AppContent: React.FC = () => {
   // If onboarding is not completed, render OnboardingWizard
   if (!isCompleted) {
     return (
-      <div className={`min-h-screen bg-background text-foreground bg-dot-grid flex items-center justify-center p-6 ${theme}`}>
+      <div className={`min-h-screen bg-background text-foreground bg-dot-grid ${theme}`}>
         <OnboardingWizard />
       </div>
     );

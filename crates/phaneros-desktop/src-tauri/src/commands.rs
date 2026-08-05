@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use phaneros_core::telemetry::{AggregateStats, DriveStatus};
-use phaneros_ipc::methods::{DriveIdParams, DriveSummary, StatsParams};
+use phaneros_ipc::methods::{AddDriveParams, DriveIdParams, DriveSummary, StatsParams};
 use phaneros_ipc::Request;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::conflicts::{self, ConflictDiffDto, ConflictSummaryDto};
 use crate::format::{format_bytes, format_relative_time};
@@ -162,4 +162,75 @@ pub async fn resolve_conflict(conflict_id: String, keep_local: bool) -> Result<(
 fn format_dedup_ratio(raw_bytes: u64, dedup_bytes: u64) -> String {
     let denominator = raw_bytes.saturating_sub(dedup_bytes).max(1);
     format!("{:.2}\u{d7}", raw_bytes as f64 / denominator as f64)
+}
+
+/// Confirms a `phanerosd` instance is reachable at the default control-plane
+/// socket. Used by the onboarding wizard's "Test Connection" step instead of
+/// the old client-only field-presence check.
+#[tauri::command]
+pub async fn daemon_ping() -> Result<(), String> {
+    ipc_client::call(Request::DaemonPing).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn add_vault(
+    drive_id: String,
+    path: String,
+    store_url: Option<String>,
+    token: Option<String>,
+) -> Result<(), String> {
+    ipc_client::call(Request::DrivesAdd(AddDriveParams {
+        drive_id,
+        path,
+        token,
+        store_url,
+        enabled: true,
+    }))
+    .await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingStateDto {
+    pub is_completed: bool,
+    pub destination_mode: String,
+    pub server_url: String,
+}
+
+fn onboarding_state_path() -> Result<PathBuf, String> {
+    let dir = dirs::config_dir()
+        .ok_or_else(|| "Could not determine the config directory".to_string())?
+        .join("phaneros");
+    Ok(dir.join("desktop-onboarding.json"))
+}
+
+/// Reads the persisted onboarding completion state. Missing/unreadable file
+/// is treated as "onboarding not yet completed" rather than an error, since
+/// that's the expected state on first launch.
+#[tauri::command]
+pub async fn load_onboarding_state() -> Result<Option<OnboardingStateDto>, String> {
+    let path = onboarding_state_path()?;
+    let contents = match tokio::fs::read_to_string(&path).await {
+        Ok(contents) => contents,
+        Err(_) => return Ok(None),
+    };
+    serde_json::from_str(&contents)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_onboarding_state(state: OnboardingStateDto) -> Result<(), String> {
+    let path = onboarding_state_path()?;
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    let contents = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, contents)
+        .await
+        .map_err(|e| e.to_string())
 }

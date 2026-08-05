@@ -54,3 +54,43 @@ export const resolveConflict = async (conflictId: string, keepLocal: boolean): P
   if (!isTauri()) return;
   await invoke('resolve_conflict', { conflictId, keepLocal });
 };
+
+export interface OnboardingStateDto {
+  isCompleted: boolean;
+  destinationMode: 'cloud' | 'self-hosted';
+  serverUrl: string;
+}
+
+/** Confirms a `phanerosd` instance is reachable; throws if not. */
+export const pingDaemon = async (): Promise<void> => {
+  if (!isTauri()) return;
+  await invoke('daemon_ping');
+};
+
+export const addVaultRemote = async (
+  driveId: string,
+  path: string,
+  storeUrl?: string,
+  token?: string
+): Promise<void> => {
+  if (!isTauri()) return;
+  await invoke('add_vault', { driveId, path, storeUrl, token });
+};
+
+export const loadOnboardingState = async (): Promise<OnboardingStateDto | null> => {
+  if (!isTauri()) return null;
+  return invoke<OnboardingStateDto | null>('load_onboarding_state');
+};
+
+export const saveOnboardingState = async (state: OnboardingStateDto): Promise<void> => {
+  if (!isTauri()) return;
+  await invoke('save_onboarding_state', { state });
+};
+
+/** Opens a native folder picker; returns null if the user cancels or outside Tauri. */
+export const pickFolder = async (): Promise<string | null> => {
+  if (!isTauri()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const result = await open({ directory: true, multiple: false });
+  return typeof result === 'string' ? result : null;
+};
