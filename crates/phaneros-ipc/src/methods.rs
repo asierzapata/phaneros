@@ -17,6 +17,27 @@ pub struct StatsParams {
     pub drive_id: Option<String>,
 }
 
+fn default_activity_limit() -> usize {
+    20
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityListParams {
+    #[serde(default)]
+    pub drive_id: Option<String>,
+    #[serde(default = "default_activity_limit")]
+    pub limit: usize,
+}
+
+impl Default for ActivityListParams {
+    fn default() -> Self {
+        Self {
+            drive_id: None,
+            limit: default_activity_limit(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddDriveParams {
     pub drive_id: String,
@@ -52,6 +73,7 @@ pub struct PingResult {
     pub version: String,
     pub pid: u32,
     pub uptime_seconds: u64,
+    pub configured: bool,
 }
 
 /// One variant per JSON-RPC method a client can call. The derived serde
@@ -84,6 +106,8 @@ pub enum Request {
     ConfigReload,
     #[serde(rename = "stats.aggregate")]
     StatsAggregate(StatsParams),
+    #[serde(rename = "activity.list")]
+    ActivityList(ActivityListParams),
     #[serde(rename = "events.subscribe")]
     EventsSubscribe,
 }
@@ -183,6 +207,28 @@ mod tests {
         let (method, params) = Request::DrivesList.into_parts();
         assert_eq!(method, "drives.list");
         assert!(params.is_none());
+    }
+
+    #[test]
+    fn activity_list_round_trips_through_parts() {
+        let original = Request::ActivityList(ActivityListParams {
+            drive_id: Some("default".to_string()),
+            limit: 10,
+        });
+        let (method, params) = original.clone().into_parts();
+        assert_eq!(method, "activity.list");
+        let parsed = Request::from_parts(&method, params).unwrap();
+        assert_eq!(
+            serde_json::to_string(&original).unwrap(),
+            serde_json::to_string(&parsed).unwrap()
+        );
+    }
+
+    #[test]
+    fn activity_list_params_default_limit() {
+        let params = ActivityListParams::default();
+        assert_eq!(params.limit, 20);
+        assert!(params.drive_id.is_none());
     }
 
     #[test]

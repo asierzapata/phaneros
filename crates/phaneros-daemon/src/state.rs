@@ -27,6 +27,7 @@ pub enum Command {
     TriggerSync { drive_id: String, reply: Reply },
     ReloadConfig(Reply),
     StatsAggregate { drive_id: Option<String>, reply: Reply },
+    ActivityList { drive_id: Option<String>, limit: usize, reply: Reply },
 }
 
 fn internal_error(message: impl Into<String>) -> JsonRpcError {
@@ -155,6 +156,7 @@ impl DaemonState {
                     version: env!("CARGO_PKG_VERSION").to_string(),
                     pid: std::process::id(),
                     uptime_seconds: self.started_at.elapsed().as_secs(),
+                    configured: !self.config.drives.is_empty(),
                 };
                 let _ = reply.send(Ok(serde_json::to_value(result).unwrap()));
             }
@@ -304,6 +306,18 @@ impl DaemonState {
                 };
                 let _ = reply.send(result);
             }
+
+            Command::ActivityList { drive_id, limit, reply } => {
+                let result = match MetricsDatabase::connect_default().await {
+                    Ok(db) => db
+                        .get_history(drive_id.as_deref(), limit)
+                        .await
+                        .map(|history| serde_json::to_value(history).unwrap())
+                        .map_err(|e| internal_error(e.to_string())),
+                    Err(err) => Err(internal_error(err.to_string())),
+                };
+                let _ = reply.send(result);
+            }
         }
     }
 
@@ -342,5 +356,47 @@ impl DaemonState {
         }
 
         Ok(json!({}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use phaneros_core::PhanerosConfig;
+    use tokio::sync::oneshot;
+
+    fn state_with_config(config: PhanerosConfig) -> DaemonState {
+        let (broadcast_tx, _) = broadcast::channel(16);
+        DaemonState::new(
+            config,
+            PathBuf::from("/tmp/phaneros-test-config.toml"),
+            broadcast_tx,
+            CancellationToken::new(),
+        )
+    }
+
+    async fn ping(state: &mut DaemonState) -> PingResult {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        state.handle(Command::Ping(reply_tx)).await;
+        let value = reply_rx.await.unwrap().unwrap();
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[tokio::test]
+    async fn ping_reports_unconfigured_with_no_drives() {
+        let mut config = PhanerosConfig::default();
+        config.drives.clear();
+        let mut state = state_with_config(config);
+
+        assert!(!ping(&mut state).await.configured);
+    }
+
+    #[tokio::test]
+    async fn ping_reports_configured_with_a_drive() {
+        let config = PhanerosConfig::default();
+        assert!(!config.drives.is_empty(), "default config is expected to seed a drive");
+        let mut state = state_with_config(config);
+
+        assert!(ping(&mut state).await.configured);
     }
 }

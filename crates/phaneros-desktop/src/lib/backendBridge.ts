@@ -1,6 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { invoke } from '@tauri-apps/api/core';
-import { BinaryMetadataDiff, CodeDiff, DriveVault, FileNode, TelemetryMetrics } from '@/types';
+import { ActivitySession, BinaryMetadataDiff, CodeDiff, DriveVault, FileNode, TelemetryMetrics } from '@/types';
 
 export interface ConflictSummary {
   id: string;
@@ -28,6 +28,11 @@ export const fetchVaults = async (): Promise<DriveVault[] | null> => {
 export const fetchTelemetry = async (): Promise<TelemetryMetrics | null> => {
   if (!isTauri()) return null;
   return invoke<TelemetryMetrics>('get_telemetry');
+};
+
+export const fetchRecentActivity = async (limit = 20): Promise<ActivitySession[] | null> => {
+  if (!isTauri()) return null;
+  return invoke<ActivitySession[]>('list_activity', { limit });
 };
 
 export const triggerSync = async (): Promise<void> => {
@@ -61,10 +66,18 @@ export interface OnboardingStateDto {
   serverUrl: string;
 }
 
-/** Confirms a `phanerosd` instance is reachable; throws if not. */
-export const pingDaemon = async (): Promise<void> => {
-  if (!isTauri()) return;
-  await invoke('daemon_ping');
+export interface DaemonPingResult {
+  version: string;
+  configured: boolean;
+}
+
+/**
+ * Confirms a `phanerosd` instance is reachable and reports whether it has
+ * at least one drive configured. Throws if the daemon is unreachable.
+ */
+export const pingDaemon = async (): Promise<DaemonPingResult | null> => {
+  if (!isTauri()) return null;
+  return invoke<DaemonPingResult>('daemon_ping');
 };
 
 export const addVaultRemote = async (
@@ -93,4 +106,31 @@ export const pickFolder = async (): Promise<string | null> => {
   const { open } = await import('@tauri-apps/plugin-dialog');
   const result = await open({ directory: true, multiple: false });
   return typeof result === 'string' ? result : null;
+};
+
+/**
+ * Spawns `phanerosd` as a detached one-off process. This is a best-effort
+ * convenience for first-run/recovery — it doesn't wait for the daemon's
+ * socket to come up; callers should re-poll (e.g. via `pingDaemon`) after
+ * a short delay to confirm it actually started.
+ */
+export const startDaemon = async (): Promise<void> => {
+  if (!isTauri()) return;
+  await invoke('start_daemon');
+};
+
+/** Registers `phanerosd` as a per-user login item (macOS only for now). */
+export const registerLoginItem = async (): Promise<void> => {
+  if (!isTauri()) return;
+  await invoke('register_login_item');
+};
+
+export const unregisterLoginItem = async (): Promise<void> => {
+  if (!isTauri()) return;
+  await invoke('unregister_login_item');
+};
+
+export const isLoginItemRegistered = async (): Promise<boolean | null> => {
+  if (!isTauri()) return null;
+  return invoke<boolean>('is_login_item_registered');
 };

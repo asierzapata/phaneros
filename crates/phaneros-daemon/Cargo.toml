@@ -9,12 +9,17 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[lib]
+name = "phaneros_daemon"
+path = "src/lib.rs"
+
 [[bin]]
 name = "phanerosd"
 path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
+dirs = "6.0.0"
 futures = "0.3"
 phaneros-core = { version = "0.1.0", path = "../phaneros-core" }
 phaneros-ipc = { version = "0.1.0", path = "../phaneros-ipc" }

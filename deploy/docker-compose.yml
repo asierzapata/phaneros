@@ -10,12 +10,17 @@ services:
       PORT: 3000
       DATABASE_PATH: /data/phaneros.db
       BLOB_STORAGE_PATH: /data/blobs
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      PUBLIC_URL: ${PUBLIC_URL:-https://phaneros.asierzapata.com}
       RUST_LOG: ${RUST_LOG:-info,tower_http=debug}
     ports:
-      - "8080:3000"
+      - "${HOST_PORT:-8085}:3000"
     volumes:
-      - phaneros_data:/data
+      - ${PHANEROS_DATA_DIR:-/mnt/nas/phaneros}:/data
 
-volumes:
-  phaneros_data:
+  # Optional Cloudflare Tunnel service for exposing phaneros-store securely to the internet.
+  # Set TUNNEL_TOKEN in your environment or .env file to enable.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: phaneros-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}

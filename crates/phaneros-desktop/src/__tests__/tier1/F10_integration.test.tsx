@@ -84,4 +84,52 @@ describe('F10_INT: State Integration & React Context', () => {
 
     expect(screen.getByTestId('drives-files-workspace')).toBeInTheDocument();
   });
+
+  it('F10-T1-06: should render a blocking screen when the daemon is unreachable, even with onboarding completed', () => {
+    render(<AppContent />, {
+      providerProps: {
+        onboardingProps: { initialState: mockOnboardingStep5Completed },
+        daemonStatusProps: { initialConnectionState: 'unreachable' },
+      },
+    });
+
+    expect(screen.getByTestId('daemon-unreachable-screen')).toBeInTheDocument();
+    expect(screen.queryByTestId('main-app-container')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('onboarding-wizard')).not.toBeInTheDocument();
+  });
+
+  it('F10-T1-07: should render a checking screen before the first daemon ping resolves', () => {
+    render(<AppContent />, {
+      providerProps: {
+        onboardingProps: { initialState: mockOnboardingStep5Completed },
+        daemonStatusProps: { initialConnectionState: 'checking' },
+      },
+    });
+
+    expect(screen.getByTestId('daemon-status-checking-screen')).toBeInTheDocument();
+    expect(screen.queryByTestId('main-app-container')).not.toBeInTheDocument();
+  });
+
+  it('F10-T1-08: should re-show onboarding when the daemon reports unconfigured, even if onboarding was previously completed', () => {
+    render(<AppContent />, {
+      providerProps: {
+        onboardingProps: { initialState: mockOnboardingStep5Completed },
+        daemonStatusProps: { initialConnectionState: 'reachable', initialConfigured: false },
+      },
+    });
+
+    expect(screen.getByTestId('onboarding-wizard')).toBeInTheDocument();
+    expect(screen.queryByTestId('main-app-container')).not.toBeInTheDocument();
+  });
+
+  it('F10-T1-09: should render the main app when the daemon is reachable, configured, and onboarding is completed', () => {
+    render(<AppContent />, {
+      providerProps: {
+        onboardingProps: { initialState: mockOnboardingStep5Completed },
+        daemonStatusProps: { initialConnectionState: 'reachable', initialConfigured: true },
+      },
+    });
+
+    expect(screen.getByTestId('main-app-container')).toBeInTheDocument();
+  });
 });

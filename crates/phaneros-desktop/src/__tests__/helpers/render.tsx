@@ -5,6 +5,8 @@ import { VaultProvider, VaultProviderProps } from '@/context/VaultContext';
 import { TelemetryProvider, TelemetryProviderProps } from '@/context/TelemetryContext';
 import { OnboardingProvider, OnboardingProviderProps } from '@/context/OnboardingContext';
 import { ViewProvider, ViewProviderProps } from '@/context/ViewContext';
+import { ActivityProvider, ActivityProviderProps } from '@/context/ActivityContext';
+import { DaemonStatusProvider, DaemonStatusProviderProps } from '@/context/DaemonStatusContext';
 
 export interface ProviderPropsOptions {
   themeProps?: Partial<ThemeProviderProps>;
@@ -12,6 +14,8 @@ export interface ProviderPropsOptions {
   telemetryProps?: Partial<TelemetryProviderProps>;
   onboardingProps?: Partial<OnboardingProviderProps>;
   viewProps?: Partial<ViewProviderProps>;
+  activityProps?: Partial<ActivityProviderProps>;
+  daemonStatusProps?: Partial<DaemonStatusProviderProps>;
 }
 
 export interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
@@ -24,15 +28,23 @@ export const AllProviders: React.FC<{
 }> = ({ children, providerProps }) => {
   return (
     <ThemeProvider {...providerProps?.themeProps}>
-      <VaultProvider {...providerProps?.vaultProps}>
-        <TelemetryProvider {...providerProps?.telemetryProps}>
-          <OnboardingProvider {...providerProps?.onboardingProps}>
-            <ViewProvider {...providerProps?.viewProps}>
-              {children}
-            </ViewProvider>
-          </OnboardingProvider>
-        </TelemetryProvider>
-      </VaultProvider>
+      <DaemonStatusProvider
+        initialConnectionState="reachable"
+        initialConfigured={true}
+        {...providerProps?.daemonStatusProps}
+      >
+        <VaultProvider {...providerProps?.vaultProps}>
+          <TelemetryProvider {...providerProps?.telemetryProps}>
+            <ActivityProvider {...providerProps?.activityProps}>
+              <OnboardingProvider {...providerProps?.onboardingProps}>
+                <ViewProvider {...providerProps?.viewProps}>
+                  {children}
+                </ViewProvider>
+              </OnboardingProvider>
+            </ActivityProvider>
+          </TelemetryProvider>
+        </VaultProvider>
+      </DaemonStatusProvider>
     </ThemeProvider>
   );
 };

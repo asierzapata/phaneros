@@ -4,8 +4,10 @@ use tauri::{
   Manager, WindowEvent,
 };
 
+mod autostart;
 mod commands;
 mod conflicts;
+mod daemon_locate;
 mod format;
 mod fs_scan;
 mod ipc_client;
@@ -42,15 +44,20 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       commands::list_vaults,
       commands::get_telemetry,
+      commands::list_activity,
       commands::trigger_sync,
       commands::get_file_tree,
       commands::list_conflicts,
       commands::get_conflict_diff,
       commands::resolve_conflict,
       commands::daemon_ping,
+      commands::start_daemon,
       commands::add_vault,
       commands::load_onboarding_state,
       commands::save_onboarding_state,
+      autostart::register_login_item,
+      autostart::unregister_login_item,
+      autostart::is_login_item_registered,
     ])
     .setup(|app| {
       let show_item = MenuItem::with_id(app, "show", "Open Phaneros", true, None::<&str>)?;

@@ -2,7 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { OnboardingState, DriveVault } from '@/types';
 import { mockOnboardingStep1 } from '@/__tests__/mocks/onboardingMocks';
-import { addVaultRemote, loadOnboardingState, pingDaemon, saveOnboardingState } from '@/lib/backendBridge';
+import {
+  addVaultRemote,
+  loadOnboardingState,
+  pingDaemon,
+  registerLoginItem,
+  saveOnboardingState,
+} from '@/lib/backendBridge';
 
 export interface OnboardingContextType extends OnboardingState {
   setStep: (step: number) => void;
@@ -128,6 +134,15 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({
         await saveOnboardingState({ isCompleted: true, destinationMode, serverUrl });
       } catch {
         // Non-fatal: onboarding will just re-run on next launch.
+      }
+      try {
+        // Best-effort: register phanerosd as a login item so it starts
+        // independent of the desktop app. Non-fatal (e.g. unsupported
+        // platform, or the user can retry from Settings) — same pattern as
+        // the daemon-down handling above.
+        await registerLoginItem();
+      } catch {
+        // Ignored; re-triggerable from Settings.
       }
     }
 

@@ -174,6 +174,11 @@ async fn dispatch(request: Request, command_tx: &mpsc::Sender<Command>) -> Resul
             drive_id: p.drive_id,
             reply: reply_tx,
         },
+        Request::ActivityList(p) => Command::ActivityList {
+            drive_id: p.drive_id,
+            limit: p.limit,
+            reply: reply_tx,
+        },
         Request::EventsSubscribe => {
             unreachable!("events.subscribe is handled before dispatch")
         }
