@@ -1,12 +1,15 @@
 use std::path::{Path, PathBuf};
 
-use phaneros_core::telemetry::{AggregateStats, DriveStatus};
-use phaneros_ipc::methods::{AddDriveParams, DriveIdParams, DriveSummary, StatsParams};
+use phaneros_core::telemetry::{AggregateStats, DriveStatus, SyncSummary};
+use phaneros_ipc::methods::{
+    ActivityListParams, AddDriveParams, DriveIdParams, DriveSummary, StatsParams,
+};
 use phaneros_ipc::Request;
 use serde::{Deserialize, Serialize};
 
 use crate::conflicts::{self, ConflictDiffDto, ConflictSummaryDto};
-use crate::format::{format_bytes, format_relative_time};
+use crate::daemon_locate;
+use crate::format::{format_activity_summary, format_bytes, format_relative_time};
 use crate::fs_scan::{self, FileNodeDto};
 use crate::ipc_client;
 
@@ -113,6 +116,36 @@ pub async fn get_telemetry() -> Result<TelemetryMetricsDto, String> {
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivitySessionDto {
+    pub id: String,
+    pub drive_id: String,
+    pub timestamp: String,
+    pub summary: String,
+}
+
+fn to_activity_dto(summary: SyncSummary) -> ActivitySessionDto {
+    ActivitySessionDto {
+        id: summary.session_id.clone(),
+        drive_id: summary.drive_id.clone(),
+        timestamp: format_relative_time(Some(summary.timestamp_epoch_sec)),
+        summary: format_activity_summary(&summary),
+    }
+}
+
+#[tauri::command]
+pub async fn list_activity(limit: Option<usize>) -> Result<Vec<ActivitySessionDto>, String> {
+    let value = ipc_client::call(Request::ActivityList(ActivityListParams {
+        drive_id: None,
+        limit: limit.unwrap_or(20),
+    }))
+    .await?;
+    let sessions: Vec<SyncSummary> = serde_json::from_value(value).map_err(|e| e.to_string())?;
+
+    Ok(sessions.into_iter().map(to_activity_dto).collect())
+}
+
 #[tauri::command]
 pub async fn trigger_sync() -> Result<(), String> {
     let value = ipc_client::call(Request::DrivesList).await?;
@@ -164,12 +197,42 @@ fn format_dedup_ratio(raw_bytes: u64, dedup_bytes: u64) -> String {
     format!("{:.2}\u{d7}", raw_bytes as f64 / denominator as f64)
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonPingDto {
+    pub version: String,
+    pub configured: bool,
+}
+
 /// Confirms a `phanerosd` instance is reachable at the default control-plane
-/// socket. Used by the onboarding wizard's "Test Connection" step instead of
-/// the old client-only field-presence check.
+/// socket, and whether it has at least one drive configured. Used by the
+/// onboarding wizard's "Test Connection" step and by the desktop app's
+/// daemon-connectivity polling to decide between the "daemon unreachable",
+/// onboarding, and main-app views.
 #[tauri::command]
-pub async fn daemon_ping() -> Result<(), String> {
-    ipc_client::call(Request::DaemonPing).await?;
+pub async fn daemon_ping() -> Result<DaemonPingDto, String> {
+    let value = ipc_client::call(Request::DaemonPing).await?;
+    let result: phaneros_ipc::PingResult =
+        serde_json::from_value(value).map_err(|e| e.to_string())?;
+    Ok(DaemonPingDto {
+        version: result.version,
+        configured: result.configured,
+    })
+}
+
+/// Spawns `phanerosd` as a detached, one-off process. Best-effort: this only
+/// confirms the process launched, not that it stayed up (e.g. it will exit
+/// immediately if another instance already holds the control socket) —
+/// callers should re-poll `daemon_ping` after a short delay to confirm.
+#[tauri::command]
+pub async fn start_daemon() -> Result<(), String> {
+    let daemon_path = daemon_locate::locate_daemon_binary()?;
+    std::process::Command::new(daemon_path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to start phanerosd: {e}"))?;
     Ok(())
 }
 

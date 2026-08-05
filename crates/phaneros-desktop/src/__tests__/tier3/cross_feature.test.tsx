@@ -15,6 +15,17 @@ import { mockDrives } from '../mocks/vaultMocks';
 // navigation path instead of the two components sharing React context directly.
 vi.mock('@tauri-apps/api/core', () => ({
   isTauri: () => true,
+  // `DaemonStatusContext` polls `daemon_ping` on mount in any `isTauri()`
+  // window, including these cross-feature tests — resolve it as a healthy,
+  // configured daemon so daemon-connectivity gating doesn't block rendering
+  // here (this suite isn't exercising that feature). Other commands aren't
+  // mocked, matching this file's existing behavior pre-dating that gate.
+  invoke: vi.fn((command: string) => {
+    if (command === 'daemon_ping') {
+      return Promise.resolve({ version: '0.1.0', configured: true });
+    }
+    return Promise.reject(new Error(`invoke("${command}") not mocked in this test`));
+  }),
 }));
 
 const eventListeners: Record<string, Array<(event: { payload: unknown }) => void>> = {};

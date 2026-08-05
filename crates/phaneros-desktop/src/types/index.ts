@@ -89,3 +89,12 @@ export interface TrayActivityItem {
   timestamp: string;
   action: 'synced' | 'modified' | 'deleted' | 'conflict';
 }
+
+// A completed sync session, sourced from the daemon's persisted sync_history.
+// Session-level (one entry per full sync run per drive), not per-file.
+export interface ActivitySession {
+  id: string;
+  driveId: string;
+  timestamp: string; // Pre-formatted relative time (e.g. '2m ago'), formatted server-side
+  summary: string; // Pre-formatted human summary (e.g. 'Synced 4.2 MB → 1.1 MB (74% smaller)')
+}

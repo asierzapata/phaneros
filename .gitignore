@@ -3,3 +3,6 @@ phaneros.db
 blobs
 node_modules
 .agents
+.env
+*.env
+crates/phaneros-desktop/src-tauri/binaries/

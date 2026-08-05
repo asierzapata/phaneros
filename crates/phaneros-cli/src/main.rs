@@ -1,9 +1,17 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use phaneros_ipc::methods::{AddDriveParams, DriveIdParams, DriveStatusResult, DriveSummary, StatsParams};
+use phaneros_ipc::methods::{
+    ActivityListParams, AddDriveParams, DriveIdParams, DriveStatusResult, DriveSummary, StatsParams,
+};
 use phaneros_ipc::{IpcClient, IpcError, Notification, PingResult, Request};
 use serde_json::Value;
+
+/// Label for the CLI's own per-user LaunchAgent registration. Distinct from
+/// the desktop app's `com.asierzapata.phaneros-desktop.phanerosd` so the two
+/// clients don't fight over the same registration.
+#[cfg(target_os = "macos")]
+const LOGIN_ITEM_LABEL: &str = "com.asierzapata.phaneros-cli.phanerosd";
 
 /// A command-line client for the Phaneros sync daemon (`phanerosd`).
 ///
@@ -69,7 +77,18 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Low-level daemon diagnostics.
+    /// Show recent completed sync sessions.
+    Activity {
+        #[arg(long)]
+        drive_id: Option<String>,
+        /// Maximum number of sessions to show.
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage the daemon itself (lifecycle, diagnostics).
     Daemon {
         #[command(subcommand)]
         command: DaemonCommands,
@@ -80,6 +99,22 @@ enum Commands {
 enum DaemonCommands {
     /// Check that the daemon is reachable and responsive.
     Ping,
+    /// Report whether the daemon is reachable, and (on macOS) whether it's
+    /// registered to start at login.
+    Status,
+    /// Spawn `phanerosd` in the background (resolved via `$PATH`).
+    Start {
+        /// Config file to pass through to `phanerosd --config`. Defaults to
+        /// the daemon's own default config path if omitted.
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+    /// Gracefully shut down the running daemon.
+    Stop,
+    /// Register `phanerosd` as a per-user login item (macOS only).
+    Install,
+    /// Unregister the per-user login item (macOS only).
+    Uninstall,
 }
 
 #[tokio::main]
@@ -150,17 +185,163 @@ async fn main() {
                 print_stats(drive_id.as_deref(), &value);
             }
         }
+        Commands::Activity { drive_id, limit, json } => {
+            let value = call(
+                &socket_path,
+                Request::ActivityList(ActivityListParams { drive_id: drive_id.clone(), limit }),
+            )
+            .await;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&value).unwrap());
+            } else {
+                print_activity(&value);
+            }
+        }
         Commands::Daemon { command } => match command {
             DaemonCommands::Ping => {
                 let value = call(&socket_path, Request::DaemonPing).await;
                 let ping: PingResult = expect_value(value);
                 println!(
-                    "phanerosd {} (pid {}), up {}s",
-                    ping.version, ping.pid, ping.uptime_seconds
+                    "phanerosd {} (pid {}), up {}s, configured: {}",
+                    ping.version, ping.pid, ping.uptime_seconds, ping.configured
                 );
             }
+            DaemonCommands::Status => daemon_status(&socket_path).await,
+            DaemonCommands::Start { config } => daemon_start(config).await,
+            DaemonCommands::Stop => {
+                call(&socket_path, Request::DaemonShutdown).await;
+                println!("Stopped phanerosd.");
+            }
+            DaemonCommands::Install => daemon_install(),
+            DaemonCommands::Uninstall => daemon_uninstall(),
         },
     }
+}
+
+async fn daemon_status(socket_path: &Path) {
+    let mut client_result = IpcClient::connect(socket_path).await;
+    match client_result.as_mut() {
+        Ok(client) => match client.call(Request::DaemonPing).await {
+            Ok(value) => {
+                let ping: PingResult = expect_value(value);
+                println!(
+                    "Reachable: phanerosd {} (pid {}), up {}s, configured: {}",
+                    ping.version, ping.pid, ping.uptime_seconds, ping.configured
+                );
+            }
+            Err(err) => println!("Unreachable: {}", err),
+        },
+        Err(err) => println!("Unreachable: {}", err),
+    }
+
+    #[cfg(target_os = "macos")]
+    match phaneros_daemon::launchd::is_installed(LOGIN_ITEM_LABEL) {
+        Ok(true) => println!("Login item: installed"),
+        Ok(false) => println!("Login item: not installed"),
+        Err(err) => println!("Login item: unknown ({})", err),
+    }
+}
+
+/// Resolves `phanerosd` via `$PATH` only; the CLI is a plain binary with no
+/// bundled sidecar, unlike the desktop app.
+fn locate_daemon_binary() -> Result<PathBuf, String> {
+    let binary_name = if cfg!(windows) { "phanerosd.exe" } else { "phanerosd" };
+
+    // Check next to the running `phaneros` executable first, so a binary
+    // invoked straight out of `target/debug` or `target/release` (or an
+    // install directory containing both binaries) finds its daemon without
+    // needing anything on `$PATH`.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(binary_name);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join(binary_name);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    Err("Could not locate the phanerosd binary (checked alongside phaneros and $PATH). Is phaneros-daemon installed?".to_string())
+}
+
+async fn daemon_start(config: Option<PathBuf>) {
+    let daemon_path = match locate_daemon_binary() {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        }
+    };
+
+    let mut command = std::process::Command::new(&daemon_path);
+    if let Some(config) = &config {
+        command.arg("--config").arg(config);
+    }
+
+    match command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(child) => println!("Started phanerosd (pid {}).", child.id()),
+        Err(err) => {
+            eprintln!("Failed to start phanerosd: {}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn daemon_install() {
+    let daemon_path = match locate_daemon_binary() {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        }
+    };
+    match phaneros_daemon::launchd::install(&phaneros_daemon::launchd::LoginItemConfig {
+        label: LOGIN_ITEM_LABEL.to_string(),
+        daemon_path,
+    }) {
+        Ok(()) => println!("Registered phanerosd to start at login."),
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn daemon_install() {
+    eprintln!("Starting phanerosd at login is only supported on macOS right now.");
+    std::process::exit(1);
+}
+
+#[cfg(target_os = "macos")]
+fn daemon_uninstall() {
+    match phaneros_daemon::launchd::uninstall(LOGIN_ITEM_LABEL) {
+        Ok(()) => println!("Unregistered phanerosd's login item."),
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn daemon_uninstall() {
+    eprintln!("Starting phanerosd at login is only supported on macOS right now.");
+    std::process::exit(1);
 }
 
 fn default_socket_path() -> Option<PathBuf> {
@@ -302,6 +483,28 @@ fn print_stats(drive_id: Option<&str>, value: &Value) {
     println!("Compression Efficiency:  {:.2}% savings", compression_pct);
     println!("Average Upload Speed:    {}", format_speed(avg_speed));
     println!("=========================================");
+}
+
+fn print_activity(value: &Value) {
+    let sessions = value.as_array().cloned().unwrap_or_default();
+    if sessions.is_empty() {
+        println!("No sync activity recorded.");
+        return;
+    }
+    println!("{:<20} {:<20} {:<12} {:<12}", "DRIVE", "TIMESTAMP", "WIRE BYTES", "AVG SPEED");
+    for session in &sessions {
+        let drive_id = session["drive_id"].as_str().unwrap_or("?");
+        let timestamp = session["timestamp_epoch_sec"].as_u64().unwrap_or(0);
+        let wire_bytes = session["transfer"]["wire_bytes_sent"].as_u64().unwrap_or(0);
+        let avg_speed = session["avg_upload_rate_bps"].as_u64().unwrap_or(0);
+        println!(
+            "{:<20} {:<20} {:<12} {:<12}",
+            drive_id,
+            timestamp,
+            format_bytes(wire_bytes),
+            format_speed(avg_speed)
+        );
+    }
 }
 
 fn format_bytes(bytes: u64) -> String {

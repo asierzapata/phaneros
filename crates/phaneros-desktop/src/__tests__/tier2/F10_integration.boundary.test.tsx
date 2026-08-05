@@ -6,6 +6,7 @@ import { useOnboarding } from '@/context/OnboardingContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useTelemetry } from '@/context/TelemetryContext';
 import { useView } from '@/context/ViewContext';
+import { useActivity } from '@/context/ActivityContext';
 import React from 'react';
 
 const GlobalStateIntegrationComponent: React.FC = () => {
@@ -14,6 +15,7 @@ const GlobalStateIntegrationComponent: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { isSyncing, triggerSync } = useTelemetry();
   const { activeTab, setActiveTab } = useView();
+  const { activity } = useActivity();
 
   const handleCrossAdd = () => {
     const newVault = { name: 'CrossVault', path: '~/Documents/CrossVault' };
@@ -32,6 +34,7 @@ const GlobalStateIntegrationComponent: React.FC = () => {
       <span data-testid="global-theme">{theme}</span>
       <span data-testid="active-tab">{activeTab}</span>
       <span data-testid="sync-status">{isSyncing ? 'Syncing' : 'Idle'}</span>
+      <span data-testid="activity-count">{activity.length}</span>
 
       <button data-testid="toggle-theme-btn" onClick={toggleTheme}>
         Toggle Theme
@@ -101,6 +104,18 @@ describe('F10_INT: State Integration & React Context Boundary Tests', () => {
 
     expect(screen.getByTestId('active-tab')).toHaveTextContent('dashboard');
     expect(screen.getByTestId('global-theme')).toHaveTextContent('light');
+  });
+
+  it('F10-T2-06: should default ActivityContext to mock recent activity outside Tauri', () => {
+    render(<GlobalStateIntegrationComponent />);
+
+    expect(screen.getByTestId('activity-count')).not.toHaveTextContent('0');
+  });
+
+  it('F10-T2-07: should throw descriptive error when useActivity is rendered outside provider', () => {
+    expect(() => {
+      renderHook(() => useActivity());
+    }).toThrow('useActivity must be used within an ActivityProvider');
   });
 
   it('F10-T2-05: should handle concurrent multi-context updates without state corruption', async () => {

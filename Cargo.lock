@@ -3272,6 +3272,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "dirs",
+ "phaneros-daemon",
  "phaneros-ipc",
  "serde",
  "serde_json",
@@ -3313,6 +3314,7 @@ name = "phaneros-daemon"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "dirs",
  "futures",
  "phaneros-core",
  "phaneros-ipc",
@@ -3331,6 +3333,7 @@ dependencies = [
  "blake3",
  "dirs",
  "phaneros-core",
+ "phaneros-daemon",
  "phaneros-ipc",
  "serde",
  "serde_json",

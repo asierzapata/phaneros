@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { useView } from '@/context/ViewContext';
+import { useDaemonStatus } from '@/context/DaemonStatusContext';
 import { Header } from '@/components/main/Header';
 import { Dashboard } from '@/components/main/Dashboard';
 import { DrivesFiles } from '@/components/main/DrivesFiles';
@@ -12,6 +13,8 @@ import { Activity } from '@/components/main/Activity';
 import { Settings } from '@/components/main/Settings';
 import { TrayPopup } from '@/components/tray/TrayPopup';
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
+import { DaemonUnreachableScreen } from '@/components/daemon/DaemonUnreachableScreen';
+import { DaemonStatusCheckingScreen } from '@/components/daemon/DaemonStatusCheckingScreen';
 import { useTheme } from '@/context/ThemeContext';
 import { NAVIGATE_TO_TAB_EVENT } from '@/lib/trayBridge';
 import { MainTab } from '@/types';
@@ -29,6 +32,7 @@ export const AppContent: React.FC = () => {
   const { isCompleted } = useOnboarding();
   const { activeTab, setActiveTab } = useView();
   const { theme } = useTheme();
+  const { connectionState, configured } = useDaemonStatus();
   const isTray = isTrayWindow();
 
   useEffect(() => {
@@ -42,11 +46,25 @@ export const AppContent: React.FC = () => {
   }, [isTray, setActiveTab]);
 
   if (isTray) {
+    // The tray window handles a reachable/unreachable daemon internally —
+    // it's a fixed-size floating popup, not a place to render a full-page
+    // blocking screen.
     return <TrayPopup />;
   }
 
-  // If onboarding is not completed, render OnboardingWizard
-  if (!isCompleted) {
+  if (connectionState === 'unreachable') {
+    return <DaemonUnreachableScreen />;
+  }
+
+  if (connectionState === 'checking') {
+    // Avoid a flash of onboarding/main content before the first ping resolves.
+    return <DaemonStatusCheckingScreen />;
+  }
+
+  // If onboarding is not completed, or the daemon has no drives configured
+  // yet (e.g. config was wiped, or this is a fresh daemon instance), render
+  // OnboardingWizard.
+  if (!isCompleted || configured === false) {
     return (
       <div className={`min-h-screen bg-background text-foreground bg-dot-grid ${theme}`}>
         <OnboardingWizard />
