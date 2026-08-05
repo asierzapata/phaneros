@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: Merriweather, Georgia, serif;
+  --font-sans: Inter, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-emerald-green: var(--emerald-green);
+  --color-emerald-bg: var(--emerald-bg);
+  --color-emerald-border: var(--emerald-border);
+  --color-amber-gold: var(--amber-gold);
+  --color-amber-bg: var(--amber-bg);
+  --color-amber-border: var(--amber-border);
+
+  --shadow-card: var(--card-shadow);
+  --shadow-card-hover: var(--card-shadow-hover);
+  --radius-lg: var(--radius);
+}
+
+:root {
+  /* Light Mode Palette */
+  --background: oklch(0.99 0.002 240);
+  --background-paper-texture: radial-gradient(#cbd5e1 0.85px, transparent 0.85px);
+  --foreground: oklch(0.148 0.004 228.8);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.148 0.004 228.8);
+  --primary: oklch(0.5 0.134 242.749);
+  --primary-foreground: oklch(0.977 0.013 236.62);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.963 0.002 197.1);
+  --muted-foreground: oklch(0.52 0.02 220);
+  --border: oklch(0.92 0.005 214.3);
+  --input: oklch(0.925 0.005 214.3);
+  --ring: oklch(0.723 0.014 214.4);
+  --radius: 0.75rem;
+
+  /* Semantic State Colors */
+  --emerald-green: #059669;
+  --emerald-bg: #ecfdf5;
+  --emerald-border: #a7f3d0;
+
+  --amber-gold: #d97706;
+  --amber-bg: #fffbeb;
+  --amber-border: #fde68a;
+
+  /* Card Elevation Drop Shadows */
+  --card-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.06), 0 4px 10px -2px rgba(0, 0, 0, 0.03);
+  --card-shadow-hover: 0 16px 36px -4px rgba(0, 0, 0, 0.1), 0 6px 14px -2px rgba(0, 0, 0, 0.05);
+}
+
+.dark, body.dark {
+  /* Dark Mode Palette */
+  --background: oklch(0.148 0.004 228.8);
+  --background-paper-texture: radial-gradient(rgba(255,255,255,0.09) 0.85px, transparent 0.85px);
+  --foreground: oklch(0.987 0.002 197.1);
+  --card: oklch(0.218 0.008 223.9);
+  --card-foreground: oklch(0.987 0.002 197.1);
+  --primary: oklch(0.5 0.134 242.749);
+  --primary-foreground: oklch(0.977 0.013 236.62);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.275 0.011 216.9);
+  --muted-foreground: oklch(0.723 0.014 214.4);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+
+  --emerald-green: #34d399;
+  --emerald-bg: rgba(16, 185, 129, 0.12);
+  --emerald-border: rgba(16, 185, 129, 0.3);
+
+  --amber-gold: #fbbf24;
+  --amber-bg: rgba(245, 158, 11, 0.12);
+  --amber-border: rgba(245, 158, 11, 0.3);
+
+  --card-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
+  --card-shadow-hover: 0 18px 40px rgba(0, 0, 0, 0.6);
+}
+
+body {
+  background-color: var(--background);
+  background-image: var(--background-paper-texture);
+  background-size: 16px 16px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.paper-substrate, .bg-dot-grid {
+  background-color: var(--background);
+  background-image: var(--background-paper-texture);
+  background-size: 16px 16px;
+}
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.shadow-card {
+  box-shadow: var(--card-shadow);
+}
+
+.shadow-card-hover {
+  box-shadow: var(--card-shadow-hover);
+}
+
+.diffs-word-added {
+  background-color: rgba(34, 197, 94, 0.25);
+  color: #15803d;
+  font-weight: 600;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.diffs-word-removed {
+  background-color: rgba(239, 68, 68, 0.25);
+  color: #b91c1c;
+  font-weight: 600;
+  text-decoration: line-through;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.tree-indent-guide {
+  border-left: 1px dashed var(--border);
+}

@@ -4,17 +4,33 @@
   "version": "0.1.0",
   "identifier": "com.asierzapata.phaneros-desktop",
   "build": {
-    "beforeDevCommand": "deno task dev",
+    "beforeDevCommand": "npx vite",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "deno task build",
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "phaneros-desktop",
         "width": 800,
         "height": 600
+      },
+      {
+        "label": "tray",
+        "title": "phaneros-desktop",
+        "url": "index.html",
+        "width": 380,
+        "height": 520,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": false
       }
     ],
     "security": {
