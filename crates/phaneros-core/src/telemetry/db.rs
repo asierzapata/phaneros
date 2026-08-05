@@ -15,6 +15,7 @@ pub struct AggregateStats {
     pub total_dedup_bytes: u64,
     pub overall_compression_ratio_pct: f64,
     pub avg_upload_rate_bps: u64,
+    pub last_sync_timestamp_epoch_sec: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -182,7 +183,7 @@ impl MetricsDatabase {
     pub async fn get_aggregate_stats(&self, drive_id: Option<&str>) -> Result<AggregateStats, sqlx::Error> {
         let row = if let Some(did) = drive_id {
             sqlx::query(
-                "SELECT COUNT(*), SUM(raw_bytes), SUM(wire_bytes), SUM(dedup_bytes), AVG(avg_speed_bps)
+                "SELECT COUNT(*), SUM(raw_bytes), SUM(wire_bytes), SUM(dedup_bytes), AVG(avg_speed_bps), MAX(timestamp)
                  FROM sync_history WHERE drive_id = ?1"
             )
             .bind(did)
@@ -190,7 +191,7 @@ impl MetricsDatabase {
             .await?
         } else {
             sqlx::query(
-                "SELECT COUNT(*), SUM(raw_bytes), SUM(wire_bytes), SUM(dedup_bytes), AVG(avg_speed_bps)
+                "SELECT COUNT(*), SUM(raw_bytes), SUM(wire_bytes), SUM(dedup_bytes), AVG(avg_speed_bps), MAX(timestamp)
                  FROM sync_history"
             )
             .fetch_one(&self.pool)
@@ -202,6 +203,7 @@ impl MetricsDatabase {
         let wire: Option<i64> = row.get(2);
         let dedup: Option<i64> = row.get(3);
         let avg_speed: Option<f64> = row.get(4);
+        let last_timestamp: Option<i64> = row.get(5);
 
         let raw_bytes = raw.unwrap_or(0) as u64;
         let wire_bytes = wire.unwrap_or(0) as u64;
@@ -220,6 +222,7 @@ impl MetricsDatabase {
             total_dedup_bytes: dedup_bytes,
             overall_compression_ratio_pct: compression_ratio,
             avg_upload_rate_bps: avg_speed.unwrap_or(0.0) as u64,
+            last_sync_timestamp_epoch_sec: last_timestamp.map(|t| t as u64),
         })
     }
 }
