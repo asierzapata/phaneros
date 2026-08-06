@@ -161,7 +161,12 @@ impl WritableBlobRepository for HttpBlobRepository {
                 reason: "Blob too large".to_string(),
             })
         } else {
-            Err(BlobRepositoryError::InsertFailed(hash))
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            Err(BlobRepositoryError::UploadRejected {
+                hash,
+                reason: format!("HTTP {status}: {body}"),
+            })
         }
     }
 }
