@@ -23,7 +23,7 @@ fn plist_path(label: &str) -> Result<PathBuf, String> {
     Ok(launch_agents_dir()?.join(format!("{label}.plist")))
 }
 
-fn log_dir() -> PathBuf {
+pub fn log_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("phaneros")
@@ -74,6 +74,14 @@ pub fn install(config: &LoginItemConfig) -> Result<(), String> {
     let plist = plist_path(&config.label)?;
     std::fs::write(&plist, plist_contents(config))
         .map_err(|e| format!("Could not write {}: {e}", plist.display()))?;
+
+    // `launchctl load` is a no-op if a job with this label is already loaded,
+    // even if it was loaded from a plist that has since changed (e.g. pointing
+    // at a binary path that no longer exists). Unload any prior registration
+    // first so the freshly written plist always takes effect.
+    let _ = std::process::Command::new("launchctl")
+        .args(["unload", &plist.display().to_string()])
+        .output();
 
     let output = std::process::Command::new("launchctl")
         .args(["load", "-w", &plist.display().to_string()])
