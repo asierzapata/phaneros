@@ -143,12 +143,16 @@ enum DaemonCommands {
 async fn main() {
     let cli = Cli::parse();
 
-    let socket_path = cli.socket.clone().or_else(default_socket_path).unwrap_or_else(|| {
-        eprintln!(
-            "Could not determine a default daemon socket path; pass --socket explicitly."
-        );
-        std::process::exit(1);
-    });
+    let socket_path = cli
+        .socket
+        .clone()
+        .or_else(default_socket_path)
+        .unwrap_or_else(|| {
+            eprintln!(
+                "Could not determine a default daemon socket path; pass --socket explicitly."
+            );
+            std::process::exit(1);
+        });
 
     match cli.command {
         Commands::List => {
@@ -157,16 +161,32 @@ async fn main() {
             print_drive_table(&drives);
         }
         Commands::Status { drive_id } => {
-            let value = call(&socket_path, Request::DrivesStatus(DriveIdParams { drive_id })).await;
+            let value = call(
+                &socket_path,
+                Request::DrivesStatus(DriveIdParams { drive_id }),
+            )
+            .await;
             let status: DriveStatusResult = expect_value(value);
             print_drive_status(&status);
         }
         Commands::Start { drive_id } => {
-            call(&socket_path, Request::DrivesStart(DriveIdParams { drive_id: drive_id.clone() })).await;
+            call(
+                &socket_path,
+                Request::DrivesStart(DriveIdParams {
+                    drive_id: drive_id.clone(),
+                }),
+            )
+            .await;
             println!("Started drive '{}'.", drive_id);
         }
         Commands::Stop { drive_id } => {
-            call(&socket_path, Request::DrivesStop(DriveIdParams { drive_id: drive_id.clone() })).await;
+            call(
+                &socket_path,
+                Request::DrivesStop(DriveIdParams {
+                    drive_id: drive_id.clone(),
+                }),
+            )
+            .await;
             println!("Stopped drive '{}'.", drive_id);
         }
         Commands::Add {
@@ -187,32 +207,64 @@ async fn main() {
             drive_id,
             config,
             disabled,
-        } => setup(&socket_path, path, store_url, token, drive_id, config, disabled).await,
+        } => {
+            setup(
+                &socket_path,
+                path,
+                store_url,
+                token,
+                drive_id,
+                config,
+                disabled,
+            )
+            .await
+        }
         Commands::Remove { drive_id } => {
-            call(&socket_path, Request::DrivesRemove(DriveIdParams { drive_id: drive_id.clone() })).await;
+            call(
+                &socket_path,
+                Request::DrivesRemove(DriveIdParams {
+                    drive_id: drive_id.clone(),
+                }),
+            )
+            .await;
             println!("Removed drive '{}'.", drive_id);
         }
         Commands::Sync { drive_id } => {
             call(
                 &socket_path,
-                Request::DrivesTriggerSync(DriveIdParams { drive_id: drive_id.clone() }),
+                Request::DrivesTriggerSync(DriveIdParams {
+                    drive_id: drive_id.clone(),
+                }),
             )
             .await;
             println!("Triggered a sync for drive '{}'.", drive_id);
         }
         Commands::Watch { drive_id } => watch(&socket_path, drive_id).await,
         Commands::Stats { drive_id, json } => {
-            let value = call(&socket_path, Request::StatsAggregate(StatsParams { drive_id: drive_id.clone() })).await;
+            let value = call(
+                &socket_path,
+                Request::StatsAggregate(StatsParams {
+                    drive_id: drive_id.clone(),
+                }),
+            )
+            .await;
             if json {
                 println!("{}", serde_json::to_string_pretty(&value).unwrap());
             } else {
                 print_stats(drive_id.as_deref(), &value);
             }
         }
-        Commands::Activity { drive_id, limit, json } => {
+        Commands::Activity {
+            drive_id,
+            limit,
+            json,
+        } => {
             let value = call(
                 &socket_path,
-                Request::ActivityList(ActivityListParams { drive_id: drive_id.clone(), limit }),
+                Request::ActivityList(ActivityListParams {
+                    drive_id: drive_id.clone(),
+                    limit,
+                }),
             )
             .await;
             if json {
@@ -367,10 +419,12 @@ async fn setup(
         None => {
             #[cfg(target_os = "macos")]
             match locate_daemon_binary() {
-                Ok(daemon_path) => match phaneros_daemon::launchd::install(&phaneros_daemon::launchd::LoginItemConfig {
-                    label: LOGIN_ITEM_LABEL.to_string(),
-                    daemon_path,
-                }) {
+                Ok(daemon_path) => match phaneros_daemon::launchd::install(
+                    &phaneros_daemon::launchd::LoginItemConfig {
+                        label: LOGIN_ITEM_LABEL.to_string(),
+                        daemon_path,
+                    },
+                ) {
                     Ok(()) => println!("Registered phanerosd to start at login."),
                     Err(err) => println!("Warning: could not register login item: {}", err),
                 },
@@ -380,18 +434,28 @@ async fn setup(
                 }
             }
 
-            daemon_start(config).await;
-
             match wait_for_daemon(socket_path).await {
                 Some(ping) => ping,
                 None => {
-                    eprintln!("phanerosd did not become reachable at {}.", socket_path.display());
-                    std::process::exit(1);
+                    daemon_start(config).await;
+                    match wait_for_daemon(socket_path).await {
+                        Some(ping) => ping,
+                        None => {
+                            eprintln!(
+                                "phanerosd did not become reachable at {}.",
+                                socket_path.display()
+                            );
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
         }
     };
-    println!("phanerosd {} (pid {}) is reachable.", ping.version, ping.pid);
+    println!(
+        "phanerosd {} (pid {}) is reachable.",
+        ping.version, ping.pid
+    );
 
     let path = match path {
         Some(path) => path,
@@ -399,7 +463,10 @@ async fn setup(
             let default_path = dirs::home_dir()
                 .map(|home| home.join("Phaneros"))
                 .unwrap_or_else(|| PathBuf::from("~/Phaneros"));
-            let entered = prompt("Local directory to sync", Some(&default_path.to_string_lossy()));
+            let entered = prompt(
+                "Local directory to sync",
+                Some(&default_path.to_string_lossy()),
+            );
             let entered = entered.unwrap_or_else(|| default_path.to_string_lossy().to_string());
             PathBuf::from(unescape_shell_path(&entered))
         }
@@ -420,23 +487,39 @@ async fn setup(
             .unwrap_or_else(|| "default".to_string())
     });
 
-    let params = build_add_drive_params(drive_id.clone(), path.clone(), store_url.clone(), token, disabled);
+    let params = build_add_drive_params(
+        drive_id.clone(),
+        path.clone(),
+        store_url.clone(),
+        token,
+        disabled,
+    );
     call(socket_path, Request::DrivesAdd(params)).await;
 
     println!();
     println!("=== Setup complete ===");
     println!("Drive:      {}", drive_id);
     println!("Path:       {}", path.display());
-    println!("Store URL:  {}", store_url.unwrap_or_else(|| "(daemon default)".to_string()));
+    println!(
+        "Store URL:  {}",
+        store_url.unwrap_or_else(|| "(daemon default)".to_string())
+    );
     println!("Started:    {}", !disabled);
     println!();
-    println!("Run `phaneros status --drive-id {}` to check on it, or `phaneros watch` to follow sync events live.", drive_id);
+    println!(
+        "Run `phaneros status --drive-id {}` to check on it, or `phaneros watch` to follow sync events live.",
+        drive_id
+    );
 }
 
 /// Resolves `phanerosd` via `$PATH` only; the CLI is a plain binary with no
 /// bundled sidecar, unlike the desktop app.
 fn locate_daemon_binary() -> Result<PathBuf, String> {
-    let binary_name = if cfg!(windows) { "phanerosd.exe" } else { "phanerosd" };
+    let binary_name = if cfg!(windows) {
+        "phanerosd.exe"
+    } else {
+        "phanerosd"
+    };
 
     // Check next to the running `phaneros` executable first, so a binary
     // invoked straight out of `target/debug` or `target/release` (or an
@@ -477,12 +560,44 @@ async fn daemon_start(config: Option<PathBuf>) {
         command.arg("--config").arg(config);
     }
 
-    match command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    {
+    let log_dir = phaneros_daemon::launchd::log_dir();
+    if let Err(err) = std::fs::create_dir_all(&log_dir) {
+        eprintln!(
+            "Warning: could not create log directory {}: {}",
+            log_dir.display(),
+            err
+        );
+    }
+    let open_log = |name: &str| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_dir.join(name))
+    };
+    let stdout = open_log("phanerosd.log");
+    let stderr = open_log("phanerosd.err.log");
+
+    command.stdin(std::process::Stdio::null());
+    match stdout {
+        Ok(file) => {
+            command.stdout(file);
+        }
+        Err(err) => {
+            eprintln!("Warning: could not open phanerosd.log: {}", err);
+            command.stdout(std::process::Stdio::null());
+        }
+    }
+    match stderr {
+        Ok(file) => {
+            command.stderr(file);
+        }
+        Err(err) => {
+            eprintln!("Warning: could not open phanerosd.err.log: {}", err);
+            command.stderr(std::process::Stdio::null());
+        }
+    }
+
+    match command.spawn() {
         Ok(child) => println!("Started phanerosd (pid {}).", child.id()),
         Err(err) => {
             eprintln!("Failed to start phanerosd: {}", err);
@@ -548,7 +663,9 @@ async fn connect(socket_path: &Path) -> IpcClient {
                 socket_path.display(),
                 err
             );
-            eprintln!("Is `phanerosd` running? Start it, or pass --socket to point at a different instance.");
+            eprintln!(
+                "Is `phanerosd` running? Start it, or pass --socket to point at a different instance."
+            );
             std::process::exit(1);
         }
     }
@@ -600,7 +717,11 @@ async fn watch(socket_path: &Path, drive_id_filter: Option<String>) {
                 }
                 println!(
                     "[{}] {:?} - {}/{} blobs, {} B sent",
-                    drive_id, event.phase, event.blobs_completed, event.blobs_total, event.bytes_sent
+                    drive_id,
+                    event.phase,
+                    event.blobs_completed,
+                    event.blobs_total,
+                    event.bytes_sent
                 );
             }
             Ok(Some(Notification::EventDriveStatusChanged { drive_id, status })) => {
@@ -626,7 +747,10 @@ fn print_drive_table(drives: &[DriveSummary]) {
         println!("No drives configured.");
         return;
     }
-    println!("{:<20} {:<10} {:<12} {:<40}", "DRIVE", "ENABLED", "STATUS", "PATH");
+    println!(
+        "{:<20} {:<10} {:<12} {:<40}",
+        "DRIVE", "ENABLED", "STATUS", "PATH"
+    );
     for drive in drives {
         println!(
             "{:<20} {:<10} {:<12} {:<40}",
@@ -660,7 +784,9 @@ fn print_stats(drive_id: Option<&str>, value: &Value) {
     let total_raw_bytes = value["total_raw_bytes"].as_u64().unwrap_or(0);
     let total_wire_bytes = value["total_wire_bytes"].as_u64().unwrap_or(0);
     let total_dedup_bytes = value["total_dedup_bytes"].as_u64().unwrap_or(0);
-    let compression_pct = value["overall_compression_ratio_pct"].as_f64().unwrap_or(0.0);
+    let compression_pct = value["overall_compression_ratio_pct"]
+        .as_f64()
+        .unwrap_or(0.0);
     let avg_speed = value["avg_upload_rate_bps"].as_u64().unwrap_or(0);
 
     println!("=== Phaneros Sync Telemetry Insights ===");
@@ -669,8 +795,14 @@ fn print_stats(drive_id: Option<&str>, value: &Value) {
     }
     println!("Total Sync Sessions:     {}", total_syncs);
     println!("Logical Data Processed:  {}", format_bytes(total_raw_bytes));
-    println!("Wire Bytes Transferred:  {}", format_bytes(total_wire_bytes));
-    println!("Deduplicated Bytes Saved:{}", format_bytes(total_dedup_bytes));
+    println!(
+        "Wire Bytes Transferred:  {}",
+        format_bytes(total_wire_bytes)
+    );
+    println!(
+        "Deduplicated Bytes Saved:{}",
+        format_bytes(total_dedup_bytes)
+    );
     println!("Compression Efficiency:  {:.2}% savings", compression_pct);
     println!("Average Upload Speed:    {}", format_speed(avg_speed));
     println!("=========================================");
@@ -682,7 +814,10 @@ fn print_activity(value: &Value) {
         println!("No sync activity recorded.");
         return;
     }
-    println!("{:<20} {:<20} {:<12} {:<12}", "DRIVE", "TIMESTAMP", "WIRE BYTES", "AVG SPEED");
+    println!(
+        "{:<20} {:<20} {:<12} {:<12}",
+        "DRIVE", "TIMESTAMP", "WIRE BYTES", "AVG SPEED"
+    );
     for session in &sessions {
         let drive_id = session["drive_id"].as_str().unwrap_or("?");
         let timestamp = session["timestamp_epoch_sec"].as_u64().unwrap_or(0);
