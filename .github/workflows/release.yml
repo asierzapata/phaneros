@@ -73,3 +73,75 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: dist/*
           generate_release_notes: true
+
+  update-tap:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Determine version and checksums
+        id: info
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "arm_sha=$(cut -d' ' -f1 dist/phaneros-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "intel_sha=$(cut -d' ' -f1 dist/phaneros-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: asierzapata/homebrew-phaneros
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update formula
+        run: |
+          cat > tap/Formula/phaneros.rb <<EOF
+          class Phaneros < Formula
+            desc "Command-line interface for phaneros file synchronization"
+            homepage "https://asierzapata.github.io/phaneros/"
+            version "${{ steps.info.outputs.version }}"
+            license "AGPL-3.0-or-later"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/asierzapata/phaneros/releases/download/${{ steps.info.outputs.tag }}/phaneros-aarch64-apple-darwin.tar.gz"
+                sha256 "${{ steps.info.outputs.arm_sha }}"
+              end
+              on_intel do
+                url "https://github.com/asierzapata/phaneros/releases/download/${{ steps.info.outputs.tag }}/phaneros-x86_64-apple-darwin.tar.gz"
+                sha256 "${{ steps.info.outputs.intel_sha }}"
+              end
+            end
+
+            def install
+              bin.install "phaneros"
+              bin.install "phanerosd"
+            end
+
+            test do
+              system "#{bin}/phaneros", "--version"
+            end
+          end
+          EOF
+
+      - name: Commit and push formula update
+        run: |
+          set -euo pipefail
+          cd tap
+          git config user.name "phaneros-release-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Formula unchanged, nothing to commit."
+            exit 0
+          fi
+          git add Formula/phaneros.rb
+          git commit -m "phaneros ${{ steps.info.outputs.version }}"
+          git push
