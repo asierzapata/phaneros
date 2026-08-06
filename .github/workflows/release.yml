@@ -20,10 +20,16 @@ jobs:
   build:
     strategy:
       matrix:
-        target:
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-    runs-on: macos-14
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,8 +41,16 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install Linux cross-compilation toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
       - name: Build phaneros and phanerosd
         run: cargo build --release --target ${{ matrix.target }} --bin phaneros --bin phanerosd
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
       - name: Package archive
         id: package
@@ -45,7 +59,11 @@ jobs:
           archive="phaneros-${{ matrix.target }}.tar.gz"
           staging="target/${{ matrix.target }}/release"
           tar -czf "$archive" -C "$staging" phaneros phanerosd
-          shasum -a 256 "$archive" > "$archive.sha256"
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "$archive" > "$archive.sha256"
+          else
+            sha256sum "$archive" > "$archive.sha256"
+          fi
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Upload archive as workflow artifact
@@ -91,8 +109,10 @@ jobs:
           tag="${{ github.event.inputs.tag || github.ref_name }}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-          echo "arm_sha=$(cut -d' ' -f1 dist/phaneros-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "intel_sha=$(cut -d' ' -f1 dist/phaneros-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "mac_arm_sha=$(cut -d' ' -f1 dist/phaneros-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "mac_intel_sha=$(cut -d' ' -f1 dist/phaneros-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "linux_arm_sha=$(cut -d' ' -f1 dist/phaneros-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "linux_intel_sha=$(cut -d' ' -f1 dist/phaneros-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout tap repo
         uses: actions/checkout@v4
@@ -113,11 +133,22 @@ jobs:
             on_macos do
               on_arm do
                 url "https://github.com/asierzapata/phaneros/releases/download/${{ steps.info.outputs.tag }}/phaneros-aarch64-apple-darwin.tar.gz"
-                sha256 "${{ steps.info.outputs.arm_sha }}"
+                sha256 "${{ steps.info.outputs.mac_arm_sha }}"
               end
               on_intel do
                 url "https://github.com/asierzapata/phaneros/releases/download/${{ steps.info.outputs.tag }}/phaneros-x86_64-apple-darwin.tar.gz"
-                sha256 "${{ steps.info.outputs.intel_sha }}"
+                sha256 "${{ steps.info.outputs.mac_intel_sha }}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/asierzapata/phaneros/releases/download/${{ steps.info.outputs.tag }}/phaneros-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${{ steps.info.outputs.linux_arm_sha }}"
+              end
+              on_intel do
+                url "https://github.com/asierzapata/phaneros/releases/download/${{ steps.info.outputs.tag }}/phaneros-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${{ steps.info.outputs.linux_intel_sha }}"
               end
             end
 
