@@ -24,4 +24,10 @@ publish = false
 [profile.dist]
 inherits = "release"
 lto = "thin"
-# Shared dependencies
+
+# Config for 'cargo-release'
+[workspace.metadata.release]
+shared-version = true
+consolidate-commits = true
+tag-name = "v{{version}}"
+publish = false
