@@ -3268,7 +3268,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "phaneros-cli"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "clap",
  "dirs",
@@ -3281,7 +3281,7 @@ dependencies = [
 
 [[package]]
 name = "phaneros-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -3311,7 +3311,7 @@ dependencies = [
 
 [[package]]
 name = "phaneros-daemon"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "clap",
  "dirs",
@@ -3328,7 +3328,7 @@ dependencies = [
 
 [[package]]
 name = "phaneros-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "dirs",
@@ -3348,7 +3348,7 @@ dependencies = [
 
 [[package]]
 name = "phaneros-ipc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures",
  "phaneros-core",
@@ -3361,7 +3361,7 @@ dependencies = [
 
 [[package]]
 name = "phaneros-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3381,7 +3381,7 @@ dependencies = [
 
 [[package]]
 name = "phaneros-sync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "serde",

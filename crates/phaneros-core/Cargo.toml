@@ -1,6 +1,6 @@
 [package]
 name = "phaneros-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Core engine library for file synchronization across devices."
 repository = "https://github.com/asierzapata/phaneros"
 homepage = "https://asierzapata.github.io/phaneros/"
@@ -20,7 +20,7 @@ fs2 = "0.4.3"
 ignore = "0.4.23"
 notify = "8.2.0"
 notify-debouncer-full = "0.7.0"
-phaneros-sync = { version = "0.1.0", path = "../phaneros-sync" }
+phaneros-sync = { version = "0.2.0", path = "../phaneros-sync" }
 rayon = "1.12.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
