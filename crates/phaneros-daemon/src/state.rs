@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use phaneros_core::syncer::sync_state::DriveSession;
 use phaneros_core::telemetry::{DriveStatus, MetricsDatabase};
-use phaneros_core::{EngineConfig, EngineHandle, PhanerosConfig, SyncEngine};
+use phaneros_core::{normalize_drive_id, EngineConfig, EngineHandle, PhanerosConfig, SyncEngine};
 use phaneros_ipc::methods::{AddDriveParams, DriveStatusResult, DriveSummary};
 use phaneros_ipc::{JsonRpcError, PingResult};
 use serde_json::{Value, json};
@@ -230,35 +230,35 @@ impl DaemonState {
             }
 
             Command::AddDrive { params, reply } => {
-                let result = if self.config.drives.contains_key(&params.drive_id) {
-                    Err(invalid_params(format!(
-                        "drive '{}' already exists",
-                        params.drive_id
-                    )))
-                } else {
-                    let drive_id = params.drive_id.clone();
-                    let drive = phaneros_core::DriveConfig {
-                        path: PathBuf::from(params.path),
-                        token: params.token.unwrap_or_default(),
-                        store_url: params.store_url,
-                        enabled: params.enabled,
-                    };
-                    self.config.drives.insert(drive_id.clone(), drive);
+                let result = match normalize_drive_id(&params.drive_id) {
+                    Err(err) => Err(invalid_params(err.to_string())),
+                    Ok(drive_id) if self.config.drives.contains_key(&drive_id) => Err(
+                        invalid_params(format!("drive '{}' already exists", drive_id)),
+                    ),
+                    Ok(drive_id) => {
+                        let drive = phaneros_core::DriveConfig {
+                            path: PathBuf::from(params.path),
+                            token: params.token.unwrap_or_default(),
+                            store_url: params.store_url,
+                            enabled: params.enabled,
+                        };
+                        self.config.drives.insert(drive_id.clone(), drive);
 
-                    let spawn_result = if params.enabled {
-                        self.spawn_drive(&drive_id).await
-                    } else {
-                        Ok(())
-                    };
+                        let spawn_result = if params.enabled {
+                            self.spawn_drive(&drive_id).await
+                        } else {
+                            Ok(())
+                        };
 
-                    match spawn_result {
-                        Ok(()) => {
-                            let _ = self.persist_config();
-                            Ok(json!({}))
-                        }
-                        Err(err) => {
-                            self.config.drives.remove(&drive_id);
-                            Err(internal_error(err))
+                        match spawn_result {
+                            Ok(()) => {
+                                let _ = self.persist_config();
+                                Ok(json!({ "drive_id": drive_id }))
+                            }
+                            Err(err) => {
+                                self.config.drives.remove(&drive_id);
+                                Err(internal_error(err))
+                            }
                         }
                     }
                 };
@@ -398,5 +398,31 @@ mod tests {
         let mut state = state_with_config(config);
 
         assert!(ping(&mut state).await.configured);
+    }
+
+    #[tokio::test]
+    async fn add_drive_normalizes_id_to_kebab_case() {
+        let mut config = PhanerosConfig::default();
+        config.drives.clear();
+        let mut state = state_with_config(config);
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        state
+            .handle(Command::AddDrive {
+                params: AddDriveParams {
+                    drive_id: "My Documents".to_string(),
+                    path: "/tmp/phaneros-test-drive".to_string(),
+                    token: None,
+                    store_url: None,
+                    enabled: false,
+                },
+                reply: reply_tx,
+            })
+            .await;
+        let value = reply_rx.await.unwrap().unwrap();
+
+        assert_eq!(value["drive_id"], "my-documents");
+        assert!(state.config.drives.contains_key("my-documents"));
+        assert!(!state.config.drives.contains_key("My Documents"));
     }
 }

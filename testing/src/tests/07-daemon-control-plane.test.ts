@@ -74,19 +74,19 @@ describe('Daemon Control Plane (multi-drive, single daemon)', () => {
 
     await harness.cli(harness.mainSocketPath, [
       'add',
-      'third_drive',
+      'third-drive',
       '--path',
       vaultD,
     ]);
 
-    const thirdRoot = await waitForStoreRoot(harness.storePort, 'third_drive');
+    const thirdRoot = await waitForStoreRoot(harness.storePort, 'third-drive');
     expect(thirdRoot).toBeTruthy();
 
     // 6. Remove it and confirm the config file no longer has the entry.
-    await harness.cli(harness.mainSocketPath, ['remove', 'third_drive']);
+    await harness.cli(harness.mainSocketPath, ['remove', 'third-drive']);
 
     const configContent = await readFile(harness.paths.configPath, 'utf-8');
-    expect(configContent).not.toContain('third_drive');
+    expect(configContent).not.toContain('third-drive');
 
     await rm(vaultD, { recursive: true, force: true });
   });
