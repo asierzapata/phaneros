@@ -4,6 +4,10 @@ version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+
+[package.metadata.dist]
+dist = false
 
 [dependencies]
 async-stream = "0.3.6"

@@ -9,6 +9,9 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[package.metadata.dist]
+dist = true
+
 [lib]
 name = "phaneros_daemon"
 path = "src/lib.rs"

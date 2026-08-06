@@ -5,6 +5,7 @@ description = "JSON-RPC control-plane protocol shared between phaneros-daemon an
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 publish = false
 
 [dependencies]

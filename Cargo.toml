@@ -14,7 +14,14 @@ members = [
 edition = "2024"
 license = "AGPL-3.0-or-later"
 authors = ["Asier Zapata <me@asierzapata.com>"]
+repository = "https://github.com/asierzapata/phaneros"
+homepage = "https://asierzapata.github.io/phaneros/"
 publish = false
 
 [workspace.dependencies]
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
 # Shared dependencies
