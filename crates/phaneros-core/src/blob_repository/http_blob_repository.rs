@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use crate::blob_repository::{
     Blob, BlobRepository, Hash, WritableBlobRepository, repository::BlobRepositoryError,
 };
+use crate::utils::compression::{compress_blob, decompress_blob};
 
 #[derive(Deserialize)]
 pub struct HttpBlobRepository {
@@ -54,11 +55,27 @@ impl BlobRepository for HttpBlobRepository {
 
         match resp.status().as_u16() {
             200 => {
-                let bytes = resp
+                let encoding = resp
+                    .headers()
+                    .get(reqwest::header::CONTENT_ENCODING)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("none")
+                    .to_string();
+
+                let raw_bytes = resp
                     .bytes()
                     .await
                     .map_err(|_| BlobRepositoryError::RetrieveFailed(hash.clone()))?
                     .to_vec();
+
+                let bytes = decompress_blob(&raw_bytes, &encoding).map_err(|e| {
+                    eprintln!(
+                        "[http-blob] get decompress hash={} encoding={} err={:?}",
+                        hash, encoding, e
+                    );
+                    BlobRepositoryError::RetrieveFailed(hash.clone())
+                })?;
+
                 Ok(Some(Blob { bytes }))
             }
             404 => Ok(None),
@@ -137,22 +154,31 @@ impl WritableBlobRepository for HttpBlobRepository {
         let url = format!("{}/api/blobs/{}", self.base_url, hash);
         let raw_len = blob.bytes.len() as u64;
 
-        let resp = self
+        let (payload, compression) = compress_blob(&blob.bytes);
+        let is_zstd = compression == "zstd";
+        let wire_len = payload.len() as u64;
+
+        let mut request = self
             .client
             .put(&url)
             .header("Authorization", &self.auth)
-            .header("Content-Type", "application/octet-stream")
-            .body(blob.bytes)
-            .send()
-            .await
-            .map_err(|e| {
-                eprintln!("[http-blob] insert err={:?}", e);
-                BlobRepositoryError::InsertFailed(hash.clone())
-            })?;
+            .header("Content-Type", "application/octet-stream");
+
+        if is_zstd {
+            request = request
+                .header("Content-Encoding", "zstd")
+                .header("X-Uncompressed-Size", raw_len.to_string());
+        }
+
+        let resp = request.body(payload).send().await.map_err(|e| {
+            eprintln!("[http-blob] insert err={:?}", e);
+            BlobRepositoryError::InsertFailed(hash.clone())
+        })?;
 
         if resp.status().is_success() {
             if let Some(ref tracker) = *self.tracker.read().unwrap() {
-                tracker.record_blob_compressed(raw_len, raw_len, false);
+                tracker.record_blob_compressed(raw_len, wire_len, is_zstd);
+                tracker.record_bytes_sent(wire_len);
             }
             Ok(())
         } else if resp.status() == reqwest::StatusCode::PAYLOAD_TOO_LARGE {

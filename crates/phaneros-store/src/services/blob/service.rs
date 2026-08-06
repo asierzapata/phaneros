@@ -94,13 +94,19 @@ impl BlobService {
         Ok(())
     }
 
-    pub async fn put_bytes_direct(&self, hash: &Hash, bytes: Bytes) -> Result<(), BlobServiceError> {
+    pub async fn put_bytes_direct(
+        &self,
+        hash: &Hash,
+        bytes: Bytes,
+        uncompressed_size: Option<i64>,
+        compression: Option<String>,
+    ) -> Result<(), BlobServiceError> {
         if self.metadata_repository.exists(hash).await? {
             return Ok(());
         }
         let size = bytes.len() as i64;
         self.metadata_repository
-            .declare(hash, size, None, None)
+            .declare(hash, size, uncompressed_size, compression.as_deref())
             .await?;
         self.bytes_repository.put_bytes(hash, bytes).await?;
         self.metadata_repository.mark_committed(hash).await?;

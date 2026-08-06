@@ -206,7 +206,12 @@ impl SyncEngine {
             self.config.token.clone(),
             move |_event| match remote_rescan.rescan() {
                 Ok(root_hash) => {
-                    let _ = remote_trigger_tx.try_send(root_hash);
+                    if remote_trigger_tx.try_send(root_hash).is_err() {
+                        tracing::warn!(
+                            drive_id = %drive_id_for_listener,
+                            "sync-trigger channel full or closed; dropped remote root-changed event"
+                        );
+                    }
                 }
                 Err(err) => {
                     tracing::warn!(drive_id = %drive_id_for_listener, "failed to rescan after remote root-changed event: {}", err);

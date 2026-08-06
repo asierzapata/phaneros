@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use futures::StreamExt;
@@ -12,8 +13,8 @@ use crate::{
         WritableBlobRepository,
     },
     node_repository::{
-        Hash, HttpNodeRepository, InMemoryNodeRepository, NodeRepository, NodeRepositoryError,
-        WritableNodeRepository,
+        Hash, HttpNodeRepository, InMemoryNodeRepository, Node, NodeRepository,
+        NodeRepositoryError, WritableNodeRepository,
     },
     syncer::{
         diff::compute_unidirectional_diff, materialize::materialize, merge::merge,
@@ -23,6 +24,56 @@ use crate::{
     utils::filesystem_write::trash_batch_path,
     watcher::RescanHandle,
 };
+
+const DEFAULT_MAX_CONCURRENT_UPLOADS: usize = 10;
+
+/// Tuning/observability knobs for a single `local_push`/`remote_pull`/`bootstrap_pull`
+/// invocation. `Default` matches the pre-existing hardcoded behavior (10-way
+/// concurrency, no telemetry).
+#[derive(Clone, Default)]
+pub struct TransferOptions {
+    pub max_concurrent: Option<usize>,
+    pub tracker: Option<crate::telemetry::ProgressTracker>,
+}
+
+/// Recovers per-blob sizes for a diff's transfer set from the `Node::File`
+/// entries already fetched into `node_cache` during that diff, so callers can
+/// report accurate transfer/dedup telemetry without re-fetching anything.
+fn blob_sizes_from_node_cache(node_cache: &HashMap<Hash, Node>) -> HashMap<Hash, u64> {
+    let mut sizes = HashMap::new();
+    for node in node_cache.values() {
+        if let Node::File { blobs } = node {
+            for blob_ref in blobs {
+                sizes.insert(blob_ref.hash.clone(), blob_ref.size);
+            }
+        }
+    }
+    sizes
+}
+
+/// Reports `blobs_total`/`logical_bytes` for the blobs about to be
+/// transferred, and dedup savings for candidate blobs that turned out to
+/// already be present at the target (present in `node_cache` but not in
+/// `blob_transfer_set`).
+fn report_diff_telemetry(
+    tracker: &crate::telemetry::ProgressTracker,
+    blob_transfer_set: &std::collections::HashSet<Hash>,
+    node_cache: &HashMap<Hash, Node>,
+) {
+    let blob_sizes = blob_sizes_from_node_cache(node_cache);
+
+    let total_logical_bytes: u64 = blob_transfer_set
+        .iter()
+        .filter_map(|hash| blob_sizes.get(hash))
+        .sum();
+    tracker.set_blobs_total(blob_transfer_set.len() as u64, total_logical_bytes);
+
+    for (hash, size) in &blob_sizes {
+        if !blob_transfer_set.contains(hash) {
+            tracker.record_blob_skipped_dedup(*size);
+        }
+    }
+}
 
 pub mod diff;
 pub mod materialize;
@@ -285,9 +336,9 @@ impl Syncer {
 
         let converged_root = match plan {
             SyncPlan::Converged => Some(local_root_hash.clone()),
-            SyncPlan::LocalPush => self.reconcile_with_local_push(&local_root_hash).await,
-            SyncPlan::RemoteBootstrapPull => self.reconcile_with_remote_bootstrap_pull().await,
-            SyncPlan::RemotePull => self.reconcile_with_remote_pull().await,
+            SyncPlan::LocalPush => self.reconcile_with_local_push(&local_root_hash, &tracker).await,
+            SyncPlan::RemoteBootstrapPull => self.reconcile_with_remote_bootstrap_pull(&tracker).await,
+            SyncPlan::RemotePull => self.reconcile_with_remote_pull(&tracker).await,
             SyncPlan::Merge => self.reconcile_with_merge(&local_root_hash).await,
         };
 
@@ -420,7 +471,11 @@ impl Syncer {
         }
     }
 
-    async fn reconcile_with_local_push(&mut self, root_hash: &Hash) -> Option<Hash> {
+    async fn reconcile_with_local_push(
+        &mut self,
+        root_hash: &Hash,
+        tracker: &crate::telemetry::ProgressTracker,
+    ) -> Option<Hash> {
         let mut success = false;
 
         {
@@ -437,6 +492,10 @@ impl Syncer {
                 &*local_blob_repository,
                 &*remote_blob_repository,
                 &root_hash,
+                TransferOptions {
+                    max_concurrent: Some(self.max_concurrent_uploads),
+                    tracker: Some(tracker.clone()),
+                },
             ).await;
 
             match result {
@@ -484,7 +543,10 @@ impl Syncer {
         success.then(|| root_hash.clone())
     }
 
-    async fn reconcile_with_remote_bootstrap_pull(&mut self) -> Option<Hash> {
+    async fn reconcile_with_remote_bootstrap_pull(
+        &mut self,
+        tracker: &crate::telemetry::ProgressTracker,
+    ) -> Option<Hash> {
         let Some(remote_root_hash) = self.get_fresh_remote_hash().await else {
             tracing::warn!("Syncer cannot bootstrap pull because remote root is unavailable.");
             return None;
@@ -506,6 +568,10 @@ impl Syncer {
                 &*local_blob_repository,
                 &*remote_blob_repository,
                 &remote_root_hash,
+                TransferOptions {
+                    max_concurrent: Some(self.max_concurrent_uploads),
+                    tracker: Some(tracker.clone()),
+                },
             ).await;
 
             match result {
@@ -551,7 +617,10 @@ impl Syncer {
         success.then_some(remote_root_hash)
     }
 
-    async fn reconcile_with_remote_pull(&mut self) -> Option<Hash> {
+    async fn reconcile_with_remote_pull(
+        &mut self,
+        tracker: &crate::telemetry::ProgressTracker,
+    ) -> Option<Hash> {
         let Some(remote_root_hash) = self.get_fresh_remote_hash().await else {
             tracing::warn!("Syncer cannot pull because remote root is unavailable.");
             return None;
@@ -573,6 +642,10 @@ impl Syncer {
                 &*local_blob_repository,
                 &*remote_blob_repository,
                 &remote_root_hash,
+                TransferOptions {
+                    max_concurrent: Some(self.max_concurrent_uploads),
+                    tracker: Some(tracker.clone()),
+                },
             ).await;
 
             match result {
@@ -729,6 +802,7 @@ pub async fn local_push(
     source_blob_repository: &(impl BlobRepository + Send + Sync),
     target_blob_repository: &(impl WritableBlobRepository + Send + Sync),
     local_root_hash: &Hash,
+    options: TransferOptions,
 ) -> Result<usize, SyncError> {
     let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
         source_node_repository,
@@ -736,6 +810,11 @@ pub async fn local_push(
         target_blob_repository,
         local_root_hash,
     ).await?;
+
+    if let Some(tracker) = &options.tracker {
+        report_diff_telemetry(tracker, &blob_transfer_set, &node_cache);
+    }
+    let max_concurrent = options.max_concurrent.unwrap_or(DEFAULT_MAX_CONCURRENT_UPLOADS);
 
     // Concurrent blob transfers
     futures::stream::iter(blob_transfer_set.into_iter())
@@ -746,7 +825,7 @@ pub async fn local_push(
             target_blob_repository.insert(hash.clone(), blob).await?;
             Ok::<(), SyncError>(())
         })
-        .buffer_unordered(10) // max_concurrent
+        .buffer_unordered(max_concurrent)
         .collect::<Vec<_>>()
         .await
         .into_iter()
@@ -771,6 +850,7 @@ pub async fn remote_pull(
     local_blob_repository: &(impl WritableBlobRepository + Send + Sync),
     remote_blob_repository: &(impl BlobRepository + Send + Sync),
     remote_root_hash: &Hash,
+    options: TransferOptions,
 ) -> Result<usize, SyncError> {
     let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
         remote_node_repository,
@@ -778,6 +858,11 @@ pub async fn remote_pull(
         local_blob_repository,
         remote_root_hash,
     ).await?;
+
+    if let Some(tracker) = &options.tracker {
+        report_diff_telemetry(tracker, &blob_transfer_set, &node_cache);
+    }
+    let max_concurrent = options.max_concurrent.unwrap_or(DEFAULT_MAX_CONCURRENT_UPLOADS);
 
     futures::stream::iter(blob_transfer_set.into_iter())
         .map(|hash| async move {
@@ -787,7 +872,7 @@ pub async fn remote_pull(
             local_blob_repository.insert(hash.clone(), blob).await?;
             Ok::<(), SyncError>(())
         })
-        .buffer_unordered(10)
+        .buffer_unordered(max_concurrent)
         .collect::<Vec<_>>()
         .await
         .into_iter()
@@ -812,6 +897,7 @@ async fn bootstrap_pull(
     local_blob_repository: &(impl WritableBlobRepository + Send + Sync),
     remote_blob_repository: &(impl BlobRepository + Send + Sync),
     remote_root_hash: &Hash,
+    options: TransferOptions,
 ) -> Result<usize, SyncError> {
     let (node_transfer_set, blob_transfer_set, mut node_cache) = compute_unidirectional_diff(
         remote_node_repository,
@@ -819,6 +905,11 @@ async fn bootstrap_pull(
         local_blob_repository,
         remote_root_hash,
     ).await?;
+
+    if let Some(tracker) = &options.tracker {
+        report_diff_telemetry(tracker, &blob_transfer_set, &node_cache);
+    }
+    let max_concurrent = options.max_concurrent.unwrap_or(DEFAULT_MAX_CONCURRENT_UPLOADS);
 
     futures::stream::iter(blob_transfer_set.into_iter())
         .map(|hash| async move {
@@ -828,7 +919,7 @@ async fn bootstrap_pull(
             local_blob_repository.insert(hash.clone(), blob).await?;
             Ok::<(), SyncError>(())
         })
-        .buffer_unordered(10)
+        .buffer_unordered(max_concurrent)
         .collect::<Vec<_>>()
         .await
         .into_iter()

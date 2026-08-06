@@ -1,7 +1,7 @@
 use crate::node_repository::WritableNodeRepository;
 use crate::blob_repository::InMemoryBlobRepository;
 use crate::node_repository::NodeRepository;
-use crate::syncer::{SyncError, local_push, remote_pull};
+use crate::syncer::{SyncError, TransferOptions, local_push, remote_pull};
 
 use super::fixtures::{TestStore, assert_missing_node};
 
@@ -26,6 +26,7 @@ async fn local_push_missing_source_blob_aborts_before_root_flip() {
         &local.blobs,
         &mut remote.blobs,
         &root.hash,
+        TransferOptions::default(),
     );
 
     // The sync reports the missing blob...
@@ -56,6 +57,7 @@ async fn remote_pull_missing_source_blob_aborts_before_root_flip() {
         &mut local.blobs,
         &mut remote.blobs,
         &root.hash,
+        TransferOptions::default(),
     );
 
     assert!(matches!(result.await, Err(SyncError::MissingSourceBlob { .. })));

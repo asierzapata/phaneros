@@ -1,7 +1,7 @@
 use crate::node_repository::WritableNodeRepository;
 use crate::blob_repository::BlobRef;
 use crate::node_repository::NodeRepository;
-use crate::syncer::{local_push, remote_pull};
+use crate::syncer::{TransferOptions, local_push, remote_pull};
 
 use super::fixtures::{
     TestStore, assert_has_blob, assert_has_node, assert_missing_blob, assert_missing_node,
@@ -23,6 +23,7 @@ async fn local_push_copies_missing_nodes_and_blobs_and_sets_root() {
         &local.blobs,
         &mut remote.blobs,
         &root.hash,
+        TransferOptions::default(),
     )
         .await.unwrap();
 
@@ -61,6 +62,7 @@ async fn local_push_identical_stores_transfers_nothing_but_updates_root() {
         &local.blobs,
         &mut remote.blobs,
         &root.hash,
+        TransferOptions::default(),
     )
         .await.unwrap();
 
@@ -82,6 +84,7 @@ async fn local_push_preserves_previous_version_nodes() {
         &local_v1.blobs,
         &mut remote.blobs,
         &root_v1.hash,
+        TransferOptions::default(),
     )
         .await.unwrap();
 
@@ -96,6 +99,7 @@ async fn local_push_preserves_previous_version_nodes() {
         &local_v2.blobs,
         &mut remote.blobs,
         &root_v2.hash,
+        TransferOptions::default(),
     )
         .await.unwrap();
 
@@ -122,6 +126,7 @@ async fn remote_pull_copies_missing_nodes_and_blobs_and_sets_root() {
         &mut local.blobs,
         &mut remote.blobs,
         &root.hash,
+        TransferOptions::default(),
     )
         .await.unwrap();
 
@@ -153,6 +158,7 @@ async fn remote_pull_identical_stores_transfers_nothing_but_updates_root() {
         &mut local.blobs,
         &mut remote.blobs,
         &root.hash,
+        TransferOptions::default(),
     )
         .await.unwrap();
 
@@ -182,6 +188,7 @@ async fn bootstrap_pull_copies_remote_state_into_local() {
         &mut local.blobs,
         &mut remote.blobs,
         &root.hash,
+        TransferOptions::default(),
     )
     .await
     .unwrap();
