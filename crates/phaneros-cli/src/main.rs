@@ -306,6 +306,26 @@ fn prompt(label: &str, default: Option<&str>) -> Option<String> {
     }
 }
 
+/// Undoes POSIX shell-style backslash-escaping (`\ ` -> ` `, `\'` -> `'`,
+/// etc). Paths dragged from Finder or pasted from shell history often arrive
+/// pre-escaped this way, but `prompt()` reads raw stdin rather than going
+/// through a shell, so those literal backslashes would otherwise end up as
+/// part of the path.
+fn unescape_shell_path(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(next) = chars.next()
+        {
+            result.push(next);
+            continue;
+        }
+        result.push(c);
+    }
+    result
+}
+
 /// Pings the daemon once without exiting the process on failure, so callers
 /// can decide how to react (e.g. `setup` deciding whether to spawn a new
 /// daemon or reuse an already-running one).
@@ -380,7 +400,8 @@ async fn setup(
                 .map(|home| home.join("Phaneros"))
                 .unwrap_or_else(|| PathBuf::from("~/Phaneros"));
             let entered = prompt("Local directory to sync", Some(&default_path.to_string_lossy()));
-            PathBuf::from(entered.unwrap_or_else(|| default_path.to_string_lossy().to_string()))
+            let entered = entered.unwrap_or_else(|| default_path.to_string_lossy().to_string());
+            PathBuf::from(unescape_shell_path(&entered))
         }
     };
 

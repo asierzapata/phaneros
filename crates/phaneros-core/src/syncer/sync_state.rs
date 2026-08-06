@@ -66,6 +66,11 @@ impl DriveSession {
     }
 
     pub fn open(drive_id: &str, local_path: &std::path::Path) -> Result<Self, SyncStateError> {
+        // The drive's target directory may not exist yet (e.g. a freshly
+        // configured drive) — canonicalize() requires it to exist, so create
+        // it upfront rather than surfacing a confusing ENOENT here.
+        std::fs::create_dir_all(local_path)?;
+
         // We try to acquire a lock on drive state (drive_id + local_path) to prevent concurrent syncs on the same drive.
         let canonical_path = local_path.canonicalize()?.to_string_lossy().to_string();
         let file_hash = blake3::hash(format!("{}:{}", drive_id, canonical_path).as_bytes())
