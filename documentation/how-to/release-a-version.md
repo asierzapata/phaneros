@@ -24,12 +24,12 @@ a machine via Homebrew.
    The tag must point at a commit already on `main` (or wherever you want to
    release from) — pushing the tag is what triggers everything below.
 4. This triggers `.github/workflows/release.yml`, which:
-   - builds `phaneros` + `phanerosd` for `x86_64-apple-darwin` and
-     `aarch64-apple-darwin`,
+   - builds `phaneros` + `phanerosd` for `x86_64-apple-darwin`,
+     `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`,
    - publishes a GitHub Release with `phaneros-<target>.tar.gz` +
      `.sha256` for each,
    - bumps `Formula/phaneros.rb` in `asierzapata/homebrew-phaneros` with the
-     new version, download URLs, and checksums, and pushes that commit
+     new version, download URLs, and checksums (for macOS and Linux), and pushes that commit
      directly to the tap repo's default branch.
 5. Watch the run: `gh run watch --workflow=release.yml`, or check
    `gh run list --workflow=release.yml`.
@@ -69,9 +69,9 @@ phaneros daemon install
 If the `update-tap` job fails (expired/missing `HOMEBREW_TAP_TOKEN`), update
 `Formula/phaneros.rb` in `asierzapata/homebrew-phaneros` by hand:
 
-1. Download the two `.sha256` files from the GitHub Release.
-2. In `Formula/phaneros.rb`, bump `version` and replace both `url`/`sha256`
-   pairs with the new release's archive URLs and checksums.
+1. Download the `.sha256` files from the GitHub Release for macOS and Linux.
+2. In `Formula/phaneros.rb`, bump `version` and update the `url`/`sha256`
+   pairs under `on_macos` and `on_linux` with the new release's archive URLs and checksums.
 3. Commit and push directly to the tap repo's default branch.
 
 ## Redeploying `phaneros-store`
