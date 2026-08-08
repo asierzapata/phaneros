@@ -19,6 +19,12 @@ use state::{Command, DaemonState};
 #[cfg(target_os = "macos")]
 pub mod launchd;
 
+pub fn log_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("phaneros")
+}
+
 /// Phaneros background synchronization daemon.
 #[derive(Parser)]
 #[command(version, about)]

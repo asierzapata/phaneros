@@ -23,14 +23,8 @@ fn plist_path(label: &str) -> Result<PathBuf, String> {
     Ok(launch_agents_dir()?.join(format!("{label}.plist")))
 }
 
-pub fn log_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("phaneros")
-}
-
 fn plist_contents(config: &LoginItemConfig) -> String {
-    let logs = log_dir();
+    let logs = crate::log_dir();
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -69,7 +63,8 @@ fn plist_contents(config: &LoginItemConfig) -> String {
 pub fn install(config: &LoginItemConfig) -> Result<(), String> {
     let dir = launch_agents_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
-    std::fs::create_dir_all(log_dir()).map_err(|e| format!("Could not create log directory: {e}"))?;
+    std::fs::create_dir_all(crate::log_dir())
+        .map_err(|e| format!("Could not create log directory: {e}"))?;
 
     let plist = plist_path(&config.label)?;
     std::fs::write(&plist, plist_contents(config))

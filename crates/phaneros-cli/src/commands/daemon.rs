@@ -86,7 +86,7 @@ pub async fn start(config: Option<PathBuf>) {
         command.arg("--config").arg(config);
     }
 
-    let log_dir = phaneros_daemon::launchd::log_dir();
+    let log_dir = phaneros_daemon::log_dir();
     if let Err(err) = std::fs::create_dir_all(&log_dir) {
         eprintln!(
             "Warning: could not create log directory {}: {}",
