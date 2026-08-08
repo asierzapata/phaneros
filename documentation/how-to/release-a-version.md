@@ -13,16 +13,16 @@ a machine via Homebrew.
 
 ## Cut a release
 
-1. Bump `version` in `crates/phaneros-cli/Cargo.toml` and
-   `crates/phaneros-daemon/Cargo.toml` to the new version.
-2. Commit that change.
-3. Tag and push:
+1. Cut a release using `cargo release`:
+   ```bash
+   cargo release patch --execute # or minor / major
    ```
+   Or manually bump `version` in `Cargo.toml` / workspace crates, commit, tag, and push:
+   ```bash
    git tag vX.Y.Z
    git push origin vX.Y.Z
    ```
-   The tag must point at a commit already on `main` (or wherever you want to
-   release from) — pushing the tag is what triggers everything below.
+   The tag must point at a commit already on `main` — pushing the tag is what triggers everything below.
 4. This triggers `.github/workflows/release.yml`, which:
    - builds `phaneros` + `phanerosd` for `x86_64-apple-darwin`,
      `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`,

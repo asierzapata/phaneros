@@ -10,7 +10,7 @@ license.workspace = true
 publish = false
 
 [package.metadata.dist]
-dist = true
+dist = false
 
 [lib]
 name = "phaneros_daemon"

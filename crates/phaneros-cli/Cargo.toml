@@ -16,6 +16,10 @@ dist = true
 name = "phaneros"
 path = "src/main.rs"
 
+[[bin]]
+name = "phanerosd"
+path = "src/bin/phanerosd.rs"
+
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 dirs = "6.0.0"

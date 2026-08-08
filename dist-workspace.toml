@@ -15,8 +15,9 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
-# Publish jobs for Homebrew
+# Publish jobs to run in CI
 publish-jobs = ["homebrew"]
-# Homebrew Tap target repo and formula
+# A GitHub repo to push Homebrew formulas to
 tap = "asierzapata/homebrew-phaneros"
+# Customize the Homebrew formula name
 formula = "phaneros"
