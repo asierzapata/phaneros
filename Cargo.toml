@@ -7,7 +7,6 @@ members = [
     "crates/phaneros-ipc",
     "crates/phaneros-sync",
     "crates/phaneros-store",
-    "crates/phaneros-desktop/src-tauri",
 ]
 
 [workspace.package]
