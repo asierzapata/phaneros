@@ -98,7 +98,7 @@ impl Watcher {
                     let _ = debouncer_tx.send(WatchEvent::FsChanged);
                 }
                 Err(errors) => errors.iter().for_each(|error| {
-                    println!("Error: {:?}", error);
+                    tracing::error!(error = ?error, "filesystem watcher debounce error");
                 }),
             },
         )?;
@@ -107,7 +107,7 @@ impl Watcher {
         let debounce_watch_result = debouncer.watch(&path, RecursiveMode::Recursive);
 
         if let Err(error) = debounce_watch_result {
-            println!("Error watching path: {:?}", error);
+            tracing::error!(path = %path.display(), error = ?error, "error watching path");
             return Err(WatcherError::PathWachError(error));
         }
 
@@ -116,7 +116,7 @@ impl Watcher {
         let initial_root_hash = match scanner_results {
             Ok(root_hash) => root_hash,
             Err(error) => {
-                println!("Error scanning path: {:?}", error);
+                tracing::error!(error = ?error, "error scanning path during watcher initialization");
                 return Err(WatcherError::Scanner(error));
             }
         };
@@ -132,7 +132,7 @@ impl Watcher {
                     WatchEvent::FsChanged => {
                         if let Ok(root_hash) = self.scanner.scan() {
                             if root_hash != last_root_hash {
-                                println!("Folder tree updated, sending to syncer...");
+                                tracing::info!("folder tree updated, sending to syncer");
                                 last_root_hash = root_hash.clone();
                                 if watcher_tx.send(root_hash).is_err() {
                                     // Nobody is syncing anymore.

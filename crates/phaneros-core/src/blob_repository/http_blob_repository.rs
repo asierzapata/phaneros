@@ -49,7 +49,7 @@ impl BlobRepository for HttpBlobRepository {
             .send()
             .await
             .map_err(|e| {
-                eprintln!("[http-blob] get err={:?}", e);
+                tracing::error!(hash = %hash, error = ?e, "http blob get failed");
                 BlobRepositoryError::RetrieveFailed(hash.clone())
             })?;
 
@@ -69,9 +69,11 @@ impl BlobRepository for HttpBlobRepository {
                     .to_vec();
 
                 let bytes = decompress_blob(&raw_bytes, &encoding).map_err(|e| {
-                    eprintln!(
-                        "[http-blob] get decompress hash={} encoding={} err={:?}",
-                        hash, encoding, e
+                    tracing::error!(
+                        hash = %hash,
+                        encoding = %encoding,
+                        error = ?e,
+                        "http blob get decompress failed"
                     );
                     BlobRepositoryError::RetrieveFailed(hash.clone())
                 })?;
@@ -126,7 +128,7 @@ impl BlobRepository for HttpBlobRepository {
             .send()
             .await
             .map_err(|e| {
-                eprintln!("[http-blob] get_missing err={:?}", e);
+                tracing::error!(error = ?e, "http blob get_missing failed");
                 BlobRepositoryError::ExistenceCheckFailed(hashes[0].clone())
             })?;
 
@@ -135,7 +137,7 @@ impl BlobRepository for HttpBlobRepository {
         }
 
         let body: MissingResponse = resp.json().await.map_err(|e| {
-            eprintln!("[http-blob] get_missing parse err={:?}", e);
+            tracing::error!(error = ?e, "http blob get_missing parse failed");
             BlobRepositoryError::ExistenceCheckFailed(hashes[0].clone())
         })?;
 
@@ -171,7 +173,7 @@ impl WritableBlobRepository for HttpBlobRepository {
         }
 
         let resp = request.body(payload).send().await.map_err(|e| {
-            eprintln!("[http-blob] insert err={:?}", e);
+            tracing::error!(hash = %hash, error = ?e, "http blob insert failed");
             BlobRepositoryError::InsertFailed(hash.clone())
         })?;
 

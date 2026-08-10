@@ -208,7 +208,7 @@ impl NodeRepository for HttpNodeRepository {
             .send()
             .await
             .map_err(|e| {
-                eprintln!("[http-node] get_missing err={:?}", e);
+                tracing::error!(drive_id = %self.drive_id, error = ?e, "http node get_missing failed");
                 NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
             })?;
 
@@ -217,7 +217,7 @@ impl NodeRepository for HttpNodeRepository {
         }
 
         let body: MissingResponse = resp.json().await.map_err(|e| {
-            eprintln!("[http-node] get_missing parse err={:?}", e);
+            tracing::error!(drive_id = %self.drive_id, error = ?e, "http node get_missing parse failed");
             NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
         })?;
 
@@ -243,7 +243,7 @@ impl NodeRepository for HttpNodeRepository {
             .send()
             .await
             .map_err(|e| {
-                eprintln!("[http-node] get_nodes_batch err={:?}", e);
+                tracing::error!(drive_id = %self.drive_id, error = ?e, "http node get_nodes_batch failed");
                 NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
             })?;
 
@@ -252,7 +252,7 @@ impl NodeRepository for HttpNodeRepository {
         }
 
         let body: BatchResponse = resp.json().await.map_err(|e| {
-            eprintln!("[http-node] get_nodes_batch parse err={:?}", e);
+            tracing::error!(drive_id = %self.drive_id, error = ?e, "http node get_nodes_batch parse failed");
             NodeRepositoryError::NodeRetrieveFailed(hashes[0].clone())
         })?;
 

@@ -47,14 +47,14 @@ pub async fn run_daemon() {
     let (config, config_path) = match PhanerosConfig::load_or_default(args.config.as_deref()) {
         Ok(res) => res,
         Err(err) => {
-            eprintln!("Configuration error: {err}");
+            tracing::error!(error = %err, "configuration error");
             std::process::exit(1);
         }
     };
 
     let Some(socket_path) = config.resolve_ipc_socket_path() else {
-        eprintln!(
-            "Could not determine an IPC socket path (no daemon.ipc_socket configured and no default data directory available)"
+        tracing::error!(
+            "could not determine an IPC socket path (no daemon.ipc_socket configured and no default data directory available)"
         );
         std::process::exit(1);
     };
@@ -90,7 +90,7 @@ pub async fn run_daemon() {
     let listener = match ipc::bind(&socket_path).await {
         Ok(listener) => listener,
         Err(err) => {
-            eprintln!("{err}");
+            tracing::error!(error = %err, "failed to bind IPC socket");
             std::process::exit(1);
         }
     };

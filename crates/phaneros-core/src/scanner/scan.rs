@@ -246,16 +246,16 @@ impl Scanner {
                 .store(scanned_entries.len(), std::sync::atomic::Ordering::SeqCst);
             snapshot.scanned_entries = scanned_entries;
 
-            println!(
-                "Scan completed for path {} in {}s. Number of entries scanned: {}",
-                self.file_path.display(),
-                snapshot
-                    .completed_at
-                    .unwrap()
-                    .duration_since(snapshot.started_at)
-                    .unwrap_or_default()
-                    .as_secs(),
-                snapshot.scanned_entries.len()
+            let duration = snapshot
+                .completed_at
+                .unwrap()
+                .duration_since(snapshot.started_at)
+                .unwrap_or_default();
+            tracing::info!(
+                path = %self.file_path.display(),
+                duration_secs = duration.as_secs(),
+                entries = snapshot.scanned_entries.len(),
+                "scan completed"
             );
 
             self.scan_snapshots.push_back(snapshot);
@@ -529,10 +529,10 @@ impl Scanner {
             None => (0, 0),
         };
 
-        println!(
-            "Scanned {} of ~{} files and directories.",
-            progress + 1,
-            total
+        tracing::debug!(
+            progress = progress + 1,
+            estimate = total,
+            "scanned files and directories"
         );
     }
 }

@@ -107,10 +107,10 @@ where
                         }
                     }
 
-                    eprintln!("SSE stream disconnected; reconnecting...");
+                    tracing::warn!("SSE stream disconnected; reconnecting");
                 }
                 Err(err) => {
-                    eprintln!("SSE connect failed: {err}");
+                    tracing::warn!(error = %err, "SSE connect failed");
                 }
             }
 
@@ -201,7 +201,7 @@ fn dispatch_event_frame<F>(
     let payload: RootChangedPayload = match serde_json::from_str(&payload_raw) {
         Ok(payload) => payload,
         Err(err) => {
-            eprintln!("SSE payload decode failed: {err}");
+            tracing::warn!(error = %err, "SSE payload decode failed");
             return;
         }
     };
