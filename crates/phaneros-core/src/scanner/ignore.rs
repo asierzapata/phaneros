@@ -25,6 +25,11 @@ impl IgnoreFilter {
         let _ = builder.add_line(None, ".DS_Store");
         let _ = builder.add_line(None, "node_modules/");
         let _ = builder.add_line(None, "target/");
+        let _ = builder.add_line(None, ".goutputstream-*");
+        let _ = builder.add_line(None, "*~");
+        let _ = builder.add_line(None, ".*.swp");
+        let _ = builder.add_line(None, ".*.swo");
+        let _ = builder.add_line(None, "\\#*\\#");
 
         // Discover and load all .phanerosignore and .gitignore files in root and subdirectories
         Self::add_ignore_files_recursively(&mut builder, &root);

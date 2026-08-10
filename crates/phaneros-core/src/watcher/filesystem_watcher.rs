@@ -121,25 +121,32 @@ impl Watcher {
             }
         };
 
+        let initial_root_hash_clone = initial_root_hash.clone();
         std::thread::spawn(move || {
             // Keep the debouncer alive for the lifetime of the watch loop.
             let _debouncer = debouncer;
+            let mut last_root_hash = initial_root_hash_clone;
 
             for event in event_rx {
                 match event {
                     WatchEvent::FsChanged => {
-                        let scanner_results = self.scanner.scan();
-                        // TODO: What we do with the error here? Right now we drop it
-                        if let Ok(root_hash) = scanner_results {
-                            println!("Folder tree updated, sending to syncer...");
-                            if watcher_tx.send(root_hash).is_err() {
-                                // Nobody is syncing anymore.
-                                break;
+                        if let Ok(root_hash) = self.scanner.scan() {
+                            if root_hash != last_root_hash {
+                                println!("Folder tree updated, sending to syncer...");
+                                last_root_hash = root_hash.clone();
+                                if watcher_tx.send(root_hash).is_err() {
+                                    // Nobody is syncing anymore.
+                                    break;
+                                }
                             }
                         }
                     }
                     WatchEvent::Rescan(reply) => {
-                        let _ = reply.send(self.scanner.scan());
+                        let res = self.scanner.scan();
+                        if let Ok(ref root_hash) = res {
+                            last_root_hash = root_hash.clone();
+                        }
+                        let _ = reply.send(res);
                     }
                     WatchEvent::Stop => break,
                 }
